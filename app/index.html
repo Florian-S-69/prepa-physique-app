@@ -1,0 +1,282 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>prepa-physique</title>
+<meta name="description" content="Carnet d'entraînement muscu + running. Tes données restent sur ton téléphone.">
+
+<!-- Manifeste + couleur de la barre système -->
+<link rel="manifest" href="./manifest.webmanifest">
+<meta name="theme-color" content="#0B0C0E">
+
+<!-- Sans ceci, le navigateur va chercher `/favicon.ico` à la RACINE DU SITE — hors
+     de la portée de l'app, donc hors du cache : un 404 à chaque visite, et une
+     erreur dans la console. Observé en servant `dist/` dans un vrai Chrome. -->
+<link rel="icon" type="image/png" href="./icons/icon-192.png">
+
+<!-- iOS ignore le manifeste pour l'icône et le mode plein écran : il lui faut ces
+     balises. `apple-mobile-web-app-capable` reste nécessaire pour les iOS < 26. -->
+<link rel="apple-touch-icon" href="./icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Prépa">
+
+<!-- Polices AUTO-HÉBERGÉES : l'app doit s'ouvrir hors ligne (cf. fonts/fonts.css). -->
+<link rel="stylesheet" href="./fonts/fonts.css">
+<!-- Le design system, point de vérité unique. On le réutilise, on ne le duplique pas. -->
+<link rel="stylesheet" href="../design/tokens.css">
+<link rel="stylesheet" href="../design/states.css">
+<link rel="stylesheet" href="./app.css">
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════════════════════════════════════
+     PORTE D'ENTRÉE — onboarding d'installation (BLOQUANT sur iOS)
+     Contrainte n°1 : sans installation sur l'écran d'accueil, iOS peut effacer
+     les séances (règle des 7 jours de l'ITP en onglet Safari). L'installation
+     débloque aussi persist() et le Wake Lock.
+     ═══════════════════════════════════════════════════════════════════════ -->
+<div class="porte" id="porte" hidden>
+  <div class="porte-carte">
+    <img class="porte-logo" src="./icons/icon-192.png" alt="" width="64" height="64">
+    <h1 class="porte-titre">Installe l'app avant de commencer</h1>
+
+    <p class="porte-pourquoi">
+      Cette app garde tes séances <b>sur ton téléphone</b> — il n'y a pas de serveur, donc
+      pas de compte, pas d'abonnement, et personne d'autre ne voit tes données.
+    </p>
+    <!-- 🔴 LA MENACE N'EST PAS LA MÊME SUR LES DEUX PLATEFORMES, et l'app ne doit pas
+         raconter iOS à quelqu'un qui est sur Android. iOS purge par INACTIVITÉ (7 jours) ;
+         Android évince sous PRESSION DE STOCKAGE (téléphone plein). Rempli par
+         `regimeStockage()` (js/install.js) — jamais en dur ici. -->
+    <p class="porte-pourquoi" id="porte-menace"></p>
+
+    <!-- iOS Safari : pas de prompt d'installation possible (aucune API). On guide. -->
+    <ol class="porte-etapes" id="etapes-ios" hidden>
+      <li><span class="porte-num">1</span> Appuie sur <b>Partager</b> <span class="porte-glyphe" aria-hidden="true">􀈂</span> en bas de Safari</li>
+      <li><span class="porte-num">2</span> Fais défiler, puis <b>« Sur l'écran d'accueil »</b></li>
+      <li><span class="porte-num">3</span> Appuie sur <b>Ajouter</b>, puis ouvre l'app depuis son icône</li>
+    </ol>
+
+    <!-- Sur iOS, seul Safari peut installer une PWA (tous les navigateurs y sont WebKit,
+         mais l'API d'installation n'est exposée qu'à Safari — MDN). -->
+    <div class="porte-etapes" id="etapes-ios-autre" hidden>
+      <p class="porte-msg">
+        Sur iPhone, <b>seul Safari</b> peut installer une app sur l'écran d'accueil.
+        Ouvre cette page dans <b>Safari</b>, puis reviens ici.
+      </p>
+    </div>
+
+    <ol class="porte-etapes" id="etapes-android" hidden>
+      <li><span class="porte-num">1</span> Appuie sur <b>Installer l'app</b> ci-dessous</li>
+      <li><span class="porte-num">2</span> Confirme, puis ouvre l'app depuis son icône</li>
+    </ol>
+
+    <div class="porte-etapes" id="etapes-android-manuel" hidden>
+      <p class="porte-msg">
+        Ouvre le menu <b>⋮</b> de ton navigateur, puis <b>« Installer l'application »</b>
+        (ou « Ajouter à l'écran d'accueil »).
+      </p>
+    </div>
+
+    <div class="porte-etapes" id="etapes-desktop" hidden>
+      <p class="porte-msg">
+        Sur ordinateur, l'installation est recommandée mais le risque d'effacement
+        automatique est <b>bien plus faible</b> que sur iPhone. Tu peux continuer dans
+        le navigateur — <b>en exportant tes données régulièrement</b>.
+      </p>
+    </div>
+
+    <div class="porte-actions">
+      <button class="state-btn" id="btn-installer" hidden>Installer l'app</button>
+      <button class="state-btn state-btn--ghost" id="btn-verifier">J'ai installé, vérifier</button>
+    </div>
+
+    <!-- Issue de secours : JAMAIS sur iOS (c'est là que la purge est documentée). -->
+    <button class="porte-echappe" id="btn-continuer-quand-meme" hidden>
+      Continuer dans le navigateur (mes données peuvent être effacées)
+    </button>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════
+     L'APP
+     ═══════════════════════════════════════════════════════════════════════ -->
+<div class="app" id="app" hidden>
+
+  <header class="barre">
+    <span class="barre-titre">prepa-physique</span>
+    <span class="pastille-hors-ligne" id="pastille-hors-ligne" hidden>Hors ligne</span>
+  </header>
+
+  <main id="vue">
+    <div id="bannieres" class="bannieres"></div>
+
+    <!-- ── Écran PROGRAMME — le moteur tourne ICI, dans le navigateur ──────
+         Le persona sort d'IndexedDB, `src/lib/muscu.js` calcule, et les
+         adaptations liées aux limitations sont rendues EN HAUT, pas enterrées.
+         Tout est construit par js/programme.js : ce conteneur est vide à dessein
+         (aucune donnée en dur — un chiffre écrit ici serait un chiffre qui ment).
+         ─────────────────────────────────────────────────────────────────── -->
+    <section data-ecran="seance" hidden>
+      <h1 class="ecran-titre">Ton programme</h1>
+      <div id="prog-etat" hidden></div>
+      <div id="prog" hidden></div>
+    </section>
+
+    <!-- ── Écran CHRONO — chrono de repos, par timestamps ─────────────────── -->
+    <section data-ecran="chrono" hidden>
+      <h1 class="ecran-titre">Repos</h1>
+
+      <div class="carte chrono-carte">
+        <div class="chrono-affichage" id="chrono-affichage" aria-live="off">
+          <span class="chrono-valeur" id="chrono-valeur">0:00</span>
+          <span class="chrono-etat" id="chrono-etat">Choisis une durée</span>
+        </div>
+
+        <div class="chrono-jauge" aria-hidden="true">
+          <div class="chrono-jauge-fill" id="chrono-jauge-fill" style="width:0%"></div>
+        </div>
+
+        <!-- L'annonce lecteur d'écran est séparée de l'affichage : on n'annonce pas
+             chaque seconde, seulement les changements d'état. -->
+        <p class="sr-only" id="chrono-annonce" aria-live="polite"></p>
+
+        <div class="chrono-presets" id="chrono-presets" role="group" aria-label="Durée du repos">
+          <button class="chrono-preset" data-duree="60">1:00</button>
+          <button class="chrono-preset" data-duree="90">1:30</button>
+          <button class="chrono-preset" data-duree="120">2:00</button>
+          <button class="chrono-preset" data-duree="180">3:00</button>
+          <button class="chrono-preset" data-duree="300">5:00</button>
+        </div>
+
+        <div class="chrono-controles" id="chrono-controles" hidden>
+          <button class="chrono-ctrl" data-ajuste="-30">−30 s</button>
+          <button class="chrono-ctrl" data-ajuste="30">+30 s</button>
+          <button class="chrono-ctrl chrono-ctrl--stop" id="btn-stop-chrono">Arrêter</button>
+        </div>
+      </div>
+
+      <!-- 🔴 Honnêteté produit : on ne promet PAS de bip écran éteint.
+           Aucune notification locale programmée n'existe sans serveur — NI SUR IOS, NI SUR
+           ANDROID. iOS ne l'a jamais eue ; Google a ABANDONNÉ son API `TimestampTrigger`
+           (motif officiel : impossible de garantir une expérience fiable entre plateformes).
+           ⚠️ Ce texte disait « c'est une limite d'iOS ». Un utilisateur Android lisait donc,
+           sur un téléphone qui n'est pas un iPhone, une excuse qui ne le concernait pas —
+           et pouvait conclure que l'app n'était pas faite pour lui. Une seule règle, honnête,
+           vraie pour les deux. -->
+      <div class="banner" id="banner-chrono-honnete">
+        <span class="banner-icon" aria-hidden="true">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+            <circle cx="12" cy="12" r="9"/><path d="M12 8h.01M11 12h1v4h1"/>
+          </svg>
+        </span>
+        <span id="txt-chrono-honnete">
+          <b>Garde l'app ouverte pendant le repos.</b> Le chrono reste juste même si tu quittes
+          l'app, mais <b>il ne sonnera pas</b> écran éteint. Aucun navigateur de téléphone ne
+          sait le faire sans serveur — <b>ni iPhone, ni Android</b>. Ce n'est pas un réglage.
+        </span>
+      </div>
+    </section>
+
+    <!-- ── Écran DONNÉES — persistance, quota, export/import ──────────────── -->
+    <section data-ecran="donnees" hidden>
+      <h1 class="ecran-titre">Mes données</h1>
+
+      <!-- Le profil que le moteur consomme. Il vit dans IndexedDB, pas dans le code. -->
+      <div class="carte">
+        <h2 class="carte-titre">Profil chargé</h2>
+        <div class="ligne-statut">
+          <span class="statut-pastille" id="pastille-profil" data-etat="inconnu" aria-hidden="true"></span>
+          <span class="statut-txt" id="txt-profil">—</span>
+        </div>
+        <p class="carte-note" id="note-profil"></p>
+        <div class="carte-actions">
+          <button class="state-btn state-btn--ghost" id="btn-reamorcer">Recharger le profil de démo</button>
+        </div>
+      </div>
+
+      <!-- Protection du stockage : on affiche le VRAI retour de persist(). -->
+      <div class="carte">
+        <h2 class="carte-titre">Protection du stockage</h2>
+        <div class="ligne-statut">
+          <span class="statut-pastille" id="pastille-persist" data-etat="inconnu" aria-hidden="true"></span>
+          <span class="statut-txt" id="txt-persist">Vérification…</span>
+        </div>
+        <p class="carte-note" id="note-persist"></p>
+        <button class="state-btn" id="btn-persist" hidden>Protéger mes données</button>
+      </div>
+
+      <!-- Quota réel, pas une estimation de façade. -->
+      <div class="carte">
+        <h2 class="carte-titre">Espace utilisé</h2>
+        <div class="quota">
+          <span class="quota-valeur" id="quota-valeur">—</span>
+          <span class="quota-sur" id="quota-sur"></span>
+        </div>
+        <div class="chrono-jauge" aria-hidden="true">
+          <div class="chrono-jauge-fill" id="quota-jauge" style="width:0%"></div>
+        </div>
+        <p class="carte-note" id="note-quota"></p>
+      </div>
+
+      <!-- 🔴 Le seul backend, c'est l'utilisateur. -->
+      <div class="carte">
+        <h2 class="carte-titre">Sauvegarde</h2>
+        <p class="carte-note" id="txt-sauvegarde">—</p>
+        <p class="carte-note">
+          Il n'y a <b>pas de serveur</b> : tes séances n'existent qu'ici. Si tu perds ton
+          téléphone, seul un export te les rend.
+        </p>
+        <div class="carte-actions">
+          <button class="state-btn" id="btn-export">Exporter mes données</button>
+          <button class="state-btn state-btn--ghost" id="btn-partager" hidden>Partager…</button>
+          <button class="state-btn state-btn--ghost" id="btn-import">Importer un fichier</button>
+        </div>
+        <input type="file" id="input-import" accept="application/json,.json" hidden>
+      </div>
+
+      <div class="carte">
+        <h2 class="carte-titre">Installation</h2>
+        <div class="ligne-statut">
+          <span class="statut-pastille" id="pastille-install" data-etat="inconnu" aria-hidden="true"></span>
+          <span class="statut-txt" id="txt-install">—</span>
+        </div>
+        <p class="carte-note" id="note-install"></p>
+      </div>
+
+      <p class="mentions">
+        Version du shell <code id="txt-version">—</code> · aucune donnée ne quitte cet appareil.
+      </p>
+    </section>
+  </main>
+
+  <nav class="onglets" aria-label="Navigation principale">
+    <button class="onglet" data-vers="seance">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+        <path d="M6.5 6.5v11M17.5 6.5v11M3.5 9v6M20.5 9v6M6.5 12h11"/>
+      </svg>
+      <span>Programme</span>
+    </button>
+    <button class="onglet" data-vers="chrono">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+        <circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2M9 2h6"/>
+      </svg>
+      <span>Repos</span>
+    </button>
+    <button class="onglet" data-vers="donnees">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+        <ellipse cx="12" cy="6" rx="8" ry="3"/><path d="M4 6v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/>
+      </svg>
+      <span>Données</span>
+    </button>
+  </nav>
+</div>
+
+<div class="toasts" id="toasts" role="status" aria-live="polite" aria-atomic="false"></div>
+
+<script type="module" src="./js/main.js"></script>
+</body>
+</html>

@@ -1,0 +1,173 @@
+/* ═══════════════════════════════════════════════════════════════════
+   tokens.css — design system prepa-physique
+   Extrait du bundle Claude Design `refs-claude-design/dashboard/`
+   (Coach.dc.html + CoachApp.dc.html + screenshots/).
+   Source de vérité visuelle : les screenshots du bundle.
+   ═══════════════════════════════════════════════════════════════════ */
+
+:root {
+  /* ── Couleurs · fonds ─────────────────────────────────────────── */
+  --bg-canvas: #08090A;       /* fond de page (hors device) */
+  --bg: #0B0C0E;              /* fond app */
+  --surface: #141619;         /* cartes */
+  --surface-2: #1B1E23;       /* surfaces relevées (avatar, icônes) */
+  --surface-hero-from: #141619; /* base du dégradé hero (mixée avec l'accent) */
+
+  /* ── Couleurs · texte (échelle d'opacité sur #F4F6F8) ─────────── */
+  --text: #F4F6F8;
+  --text-strong: #FFFFFF;     /* gras d'emphase (<b> dans les encarts « pourquoi ») */
+  --text-74: rgba(244, 246, 248, 0.74);
+  --text-70: rgba(244, 246, 248, 0.70);
+  --text-62: rgba(244, 246, 248, 0.62);
+  --text-55: rgba(244, 246, 248, 0.55);
+  --text-50: rgba(244, 246, 248, 0.50);
+  --text-45: rgba(244, 246, 248, 0.45);
+  --text-40: rgba(244, 246, 248, 0.40);
+  --text-34: rgba(244, 246, 248, 0.34);
+  --text-25: rgba(244, 246, 248, 0.25);
+
+  /* ── Couleurs · bordures & fills neutres ──────────────────────── */
+  --line-6: rgba(255, 255, 255, 0.06);
+  --line-8: rgba(255, 255, 255, 0.08);
+  --line-10: rgba(255, 255, 255, 0.10);
+  --line-12: rgba(255, 255, 255, 0.12);
+  --fill-2: rgba(255, 255, 255, 0.02);
+  --fill-3: rgba(255, 255, 255, 0.03);
+  --fill-4: rgba(255, 255, 255, 0.04);
+  --fill-6: rgba(255, 255, 255, 0.06);
+  --fill-8: rgba(255, 255, 255, 0.08);
+
+  /* ── Accent ───────────────────────────────────────────────────── */
+  /* Accent unique de la marque : « Lime performance » #CDFF4B
+     (arbitré le 2026-07-11 ; la piste corail est abandonnée).
+     Point de vérité unique : aucune valeur d'accent en dur ailleurs.
+     Toutes les teintes dérivées passent par color-mix(in oklab, …), donc
+     un changement de --acc se propage à tout le système. */
+  --acc: #CDFF4B;
+  --acc-ink: #0B0C0E;                                        /* texte posé sur l'accent */
+  --acc-hover: #e6ff8a;
+  --acc-14: color-mix(in oklab, var(--acc) 14%, transparent); /* pills / badges */
+  --acc-13: color-mix(in oklab, var(--acc) 13%, transparent); /* tags cibles */
+  --acc-18: color-mix(in oklab, var(--acc) 18%, transparent); /* rond ✓ terminé */
+  --acc-24: color-mix(in oklab, var(--acc) 24%, transparent); /* bordure hero */
+  --acc-30: color-mix(in oklab, var(--acc) 30%, transparent); /* bordure carte active */
+  --acc-surface-12: color-mix(in oklab, var(--acc) 12%, var(--surface-2)); /* icône sortie */
+  --acc-surface-26: color-mix(in oklab, var(--acc) 26%, var(--surface-2)); /* avatar */
+  --acc-hero-15: color-mix(in oklab, var(--acc) 15%, #141619); /* départ dégradé hero */
+  --acc-hero-to: #131519;                                     /* arrivée dégradé hero (neutre) */
+  /* Encres posées SUR un aplat d'accent (segmented control « Valider · RIR ») :
+     séparateurs et libellés secondaires, dérivés de --acc-ink. */
+  --acc-ink-16: color-mix(in oklab, var(--acc-ink) 16%, transparent);
+  --acc-ink-45: color-mix(in oklab, var(--acc-ink) 45%, transparent);
+  --acc-ink-70: color-mix(in oklab, var(--acc-ink) 70%, transparent);
+
+  /* ── Voile des feuilles modales (menus, confirmations, « Pourquoi ? ») ── */
+  --scrim: color-mix(in oklab, var(--bg-canvas) 76%, transparent);
+
+  /* ── Sémantique · erreur ──────────────────────────────────────── */
+  /* Seule couleur sémantique hors accent : signaler un échec (import,
+     synchro) sans le confondre avec l'accent de marque. Consommée par
+     states.css (.state--error, .banner--error). Contraste sur --bg
+     ≈ 6,5:1 (AA texte normal). */
+  --danger: #FF5C5C;
+  --danger-12: color-mix(in oklab, var(--danger) 12%, transparent);
+  --danger-30: color-mix(in oklab, var(--danger) 30%, transparent);
+
+  /* ── Typographie ──────────────────────────────────────────────── */
+  --font-sans: 'Hanken Grotesk', system-ui, sans-serif;      /* UI, titres */
+  --font-mono: 'JetBrains Mono', monospace;                   /* métriques, chiffres */
+
+  --fs-caption: 10px;      /* labels colonnes (FORME / FITNESS / FATIGUE) */
+  --fs-overline: 11px;     /* kickers de section (SÉANCE DU JOUR · MUSCU) */
+  --fs-meta: 12px;         /* badges, méta */
+  --fs-body-s: 12.5px;     /* texte secondaire */
+  --fs-body: 13px;         /* corps */
+  --fs-why: 13.5px;        /* encart « pourquoi » */
+  --fs-label: 15px;        /* boutons, titres de ligne */
+  --fs-metric-s: 19px;     /* timer */
+  --fs-title-s: 23px;      /* nom d'exercice */
+  --fs-metric: 24px;       /* métriques Forme/Fitness/Fatigue */
+  --fs-title: 25px;        /* titre hero (Push · Force) */
+  --fs-greeting: 27px;     /* « Salut, <prénom> » du dashboard */
+  --fs-metric-l: 30px;     /* kcal */
+  --fs-metric-xl: 36px;    /* chrono de repos (lisible à bout de bras : ≥ 36 px) */
+
+  --ls-overline: 2px;      /* letter-spacing kickers */
+  --ls-caption: 1.5px;
+  --ls-wide: 2.5px;
+  --ls-title: -0.5px;
+
+  /* ── Radii ────────────────────────────────────────────────────── */
+  --r-sm: 8px;         /* tags */
+  --r-md: 12px;        /* boutons RIR, encart pourquoi */
+  --r-input: 14px;     /* steppers, lignes de série, bouton pourquoi hero */
+  --r-btn: 16px;       /* CTA principal */
+  --r-card: 22px;      /* cartes standard */
+  --r-hero: 24px;      /* carte hero */
+  --r-pill: 999px;
+
+  /* ── Espacements ──────────────────────────────────────────────── */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 14px;    /* gap entre cartes */
+  --sp-5: 18px;    /* padding interne des cartes */
+  --sp-6: 20px;    /* padding hero */
+
+  /* ── Device (proto mobile) ────────────────────────────────────── */
+  --dev-w: 402px;
+  --dev-h: 874px;
+
+  /* ── Mouvement ────────────────────────────────────────────────────
+     Le mouvement était le SEUL domaine du design system sans tokens :
+     15 déclarations en dur, dans 6 fichiers, dont un `transition: all`
+     et une courbe faite à la main — pour ce qui était huit écritures
+     de la même durée (.15s, 0.15s, .18s, .2s, .25s, 0.25s, .26s, .28s).
+     C'était l'unique endroit où notre règle fondatrice (« aucune valeur
+     en dur ») n'était pas appliquée. Point de vérité unique, désormais :
+     toute durée et toute courbe du produit sort d'ici, et `audit.js`
+     échoue si une valeur de mouvement est écrite en dur ailleurs.
+
+     ⚠️ Une durée d'animation n'est PAS du décor : c'est de la LATENCE.
+     L'utilisateur ne distingue pas « l'app a mis 200 ms à répondre » de
+     « l'app a répondu tout de suite mais l'animation dure 200 ms ».
+     (RECHERCHE-interaction.md, I2 — trois durées, deux courbes.)          */
+
+  --dur-press: 120ms;   /* retour de press — 100-160 ms. La confirmation. */
+  --dur-exit:  160ms;   /* sortie — on ne fait jamais attendre qui s'en va (I10) */
+  --dur-ui:    200ms;   /* transition d'état courante (plafond dur : 300 ms) */
+  --dur-sheet: 260ms;   /* entrée d'une feuille. Pas 500 ms : on n'est pas iOS,
+                           on est entre deux séries de squat. */
+
+  /* ⚠️ LA SEULE DURÉE QUI DÉPASSE LE PLAFOND DE 300 ms — et elle se justifie
+     par la table de FRÉQUENCE, pas par le goût.
+     La règle d'Emil n'est pas « pas d'animation » : c'est « plus un geste est
+     fréquent, moins il doit être animé ». Valider une série = 17×/séance,
+     6×/semaine → AUCUNE animation d'agrément (I1). Terminer une séance = 1×,
+     après 75 minutes de travail → c'est l'exact opposé du même barème.
+     Le budget de mouvement se DÉPENSE là où la fréquence est basse et le sens
+     est haut ; il se COUPE là où la fréquence est haute.
+     Réservé à l'artefact de fin de séance. Rien d'autre n'y a droit. */
+  --dur-count: 640ms;   /* le tonnage qui se pose. Une fois. */
+
+  /* Deux courbes. Pas une de plus, et aucune faite à la main : les
+     easings natifs de CSS sont trop mous, les courbes maison sont des
+     approximations qui divergent. (Ni l'une ni l'autre n'est « de nous » :
+     easeOutQuint de R. Penner, et la courbe iOS via Ionic — MIT.) */
+  --ease-out:   cubic-bezier(0.23, 1, 0.32, 1);    /* tout : entrées, sorties, press */
+  --ease-sheet: cubic-bezier(0.32, 0.72, 0, 1);    /* feuilles — la courbe iOS */
+
+  /* Seuils du glissé de fermeture (sheet.js) — empiriques, éprouvés par
+     Vaul. Distance OU vélocité, jamais distance seule : un utilisateur
+     pressé fait des gestes rapides et COURTS. Exiger de la distance,
+     c'est punir la hâte. */
+  --sheet-close-ratio: 0.25;      /* 25 % de la hauteur de la feuille */
+  --sheet-close-velocity: 0.4;    /* px/ms — un coup sec suffit */
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   Accessibilité — styles a11y communs (factorisés depuis les écrans).
+   Placés ici car tous les écrans lient tokens.css : point de vérité
+   unique pour l'anneau de focus clavier, dérivé de l'accent (--acc).
+   ═══════════════════════════════════════════════════════════════════ */
+:focus-visible { outline: 2px solid var(--acc); outline-offset: 2px; }

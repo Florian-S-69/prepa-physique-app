@@ -1,0 +1,733 @@
+/* ═══════════════════════════════════════════════════════════════════
+   app.css — la coquille PWA.
+
+   Dépend de `design/tokens.css` (chargé AVANT) : aucune couleur, aucun
+   rayon, aucune taille de texte n'est écrite en dur ici. Si l'utilisateur change
+   `--acc`, toute l'app suit.
+   `design/states.css` fournit `.state*`, `.banner*`, `.sk*`, `.sr-only`.
+
+   Différence avec les maquettes `design/*.html` : celles-ci dessinent un
+   téléphone dans une page (chrome de proto, `.device`). Ici, l'app EST le
+   téléphone — donc plein écran, zones sûres iOS, et une barre d'onglets.
+   ═══════════════════════════════════════════════════════════════════ */
+
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  /* Neutralise le rebond élastique d'iOS — ET le « tirer pour rafraîchir » d'Android,
+     qui RECHARGE l'app quand on tire vers le bas en haut de page. En salle, entre deux
+     séries, ce geste part tout seul. */
+  overscroll-behavior-y: none;
+}
+
+/* 🔴 L'app est sombre, et il faut le DIRE au navigateur — pas seulement le peindre.
+   `color-scheme` ne colore pas l'app (c'est le rôle des tokens) : il gouverne tout ce
+   que le NAVIGATEUR dessine lui-même et qu'aucune CSS n'atteint — les boîtes de dialogue
+   `confirm()` (l'app en ouvre une avant tout import), le sélecteur de fichiers, les
+   barres de défilement, les contrôles de formulaire (l'onboarding en aura).
+   Sans cette ligne, Chrome Android sert une boîte de dialogue BLANCHE au milieu d'une app
+   noire. Non observable sur nos captures : ces surfaces sont dessinées par le système,
+   hors de la page. */
+html { color-scheme: dark; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: var(--fs-body);
+  -webkit-font-smoothing: antialiased;
+}
+
+button { font-family: inherit; cursor: pointer; }
+code { font-family: var(--font-mono); }
+
+/* Zones sûres iOS (encoche, barre d'accueil). `viewport-fit=cover` les active. */
+:root {
+  --safe-haut: env(safe-area-inset-top, 0px);
+  --safe-bas: env(safe-area-inset-bottom, 0px);
+}
+
+/* ═══ PORTE D'ENTRÉE (onboarding d'installation) ══════════════════ */
+
+.porte {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: calc(var(--safe-haut) + var(--sp-5)) var(--sp-5) calc(var(--safe-bas) + var(--sp-5));
+  background: var(--bg);
+  overflow-y: auto;
+}
+.porte[hidden] { display: none; }
+
+.porte-carte {
+  width: 100%;
+  max-width: 420px;
+  margin: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: var(--sp-4);
+}
+
+.porte-logo { border-radius: var(--r-input); }
+
+.porte-titre {
+  margin: 0;
+  font-size: var(--fs-title);
+  font-weight: 800;
+  letter-spacing: var(--ls-title);
+}
+
+.porte-pourquoi {
+  margin: 0;
+  font-size: var(--fs-why);
+  line-height: 1.55;
+  color: var(--text-70);
+}
+.porte-pourquoi b { color: var(--text-strong); font-weight: 700; }
+
+.porte-etapes {
+  width: 100%;
+  margin: 0;
+  padding: var(--sp-5);
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  text-align: left;
+  background: var(--surface);
+  border: 1px solid var(--line-8);
+  border-radius: var(--r-card);
+}
+.porte-etapes[hidden] { display: none; }
+.porte-etapes li {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  font-size: var(--fs-body);
+  line-height: 1.45;
+  color: var(--text-74);
+}
+.porte-etapes b { color: var(--text-strong); font-weight: 700; }
+
+.porte-num {
+  flex-shrink: 0;
+  width: 24px; height: 24px;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: var(--r-pill);
+  background: var(--acc-14);
+  color: var(--acc);
+  font-family: var(--font-mono);
+  font-size: var(--fs-meta);
+  font-weight: 700;
+}
+
+/* Glyphe « Partager » d'iOS. Il ne se rend QUE sur iOS (police système Apple) —
+   d'où le fallback : la mention « Partager » en toutes lettres le précède. */
+.porte-glyphe { color: var(--acc); font-size: 15px; }
+
+.porte-msg {
+  margin: 0;
+  font-size: var(--fs-body);
+  line-height: 1.5;
+  color: var(--text-70);
+}
+.porte-msg b { color: var(--text-strong); font-weight: 700; }
+
+.porte-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  justify-content: center;
+  width: 100%;
+}
+.porte-actions .state-btn { flex: 1; min-width: 150px; }
+
+/* Issue de secours : visible, mais visiblement secondaire. */
+.porte-echappe {
+  margin-top: var(--sp-2);
+  padding: var(--sp-3);
+  min-height: 44px;
+  background: none;
+  border: none;
+  color: var(--text-40);
+  font-size: var(--fs-body-s);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.porte-echappe:hover { color: var(--text-62); }
+.porte-echappe[hidden] { display: none; }
+
+/* ═══ CADRE DE L'APP ══════════════════════════════════════════════ */
+
+.app {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+.app[hidden] { display: none; }
+
+.barre {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: calc(var(--safe-haut) + var(--sp-3)) var(--sp-5) var(--sp-3);
+  border-bottom: 1px solid var(--line-6);
+  background: var(--bg);
+}
+.barre-titre {
+  font-size: var(--fs-overline);
+  font-weight: 800;
+  letter-spacing: var(--ls-overline);
+  text-transform: uppercase;
+  color: var(--text-45);
+}
+.pastille-hors-ligne {
+  margin-left: auto;
+  padding: 3px var(--sp-2);
+  border-radius: var(--r-pill);
+  background: var(--fill-6);
+  border: 1px solid var(--line-10);
+  font-size: var(--fs-caption);
+  font-weight: 700;
+  letter-spacing: var(--ls-caption);
+  text-transform: uppercase;
+  color: var(--text-55);
+}
+.pastille-hors-ligne[hidden] { display: none; }
+
+main {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: var(--sp-5) var(--sp-5) var(--sp-6);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+}
+main > section[hidden] { display: none; }
+main > section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+}
+
+.ecran-titre {
+  margin: 0;
+  font-size: var(--fs-greeting);
+  font-weight: 800;
+  letter-spacing: var(--ls-title);
+}
+
+.bannieres:empty { display: none; }
+.bannieres { display: flex; flex-direction: column; gap: var(--sp-3); }
+
+/* ── Cartes ───────────────────────────────────────────────────────── */
+.carte {
+  padding: var(--sp-5);
+  border-radius: var(--r-card);
+  background: var(--surface);
+  border: 1px solid var(--line-8);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+.carte-titre {
+  margin: 0;
+  font-size: var(--fs-overline);
+  font-weight: 800;
+  letter-spacing: var(--ls-overline);
+  text-transform: uppercase;
+  color: var(--text-45);
+}
+.carte-note {
+  margin: 0;
+  font-size: var(--fs-body-s);
+  line-height: 1.5;
+  color: var(--text-55);
+}
+.carte-note b { color: var(--text-strong); font-weight: 700; }
+.carte-actions { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+.carte-actions .state-btn { flex: 1; min-width: 140px; }
+
+/* ── Ligne de statut (pastille + texte) ───────────────────────────── */
+.ligne-statut { display: flex; align-items: center; gap: var(--sp-3); }
+.statut-pastille {
+  width: 10px; height: 10px;
+  flex-shrink: 0;
+  border-radius: var(--r-pill);
+  background: var(--text-25);
+}
+.statut-pastille[data-etat="ok"] { background: var(--acc); box-shadow: 0 0 0 4px var(--acc-14); }
+.statut-pastille[data-etat="ko"] { background: var(--danger); box-shadow: 0 0 0 4px var(--danger-12); }
+.statut-txt { font-size: var(--fs-label); font-weight: 700; }
+
+/* ── Quota ────────────────────────────────────────────────────────── */
+.quota { display: flex; align-items: baseline; gap: var(--sp-2); }
+.quota-valeur {
+  font-family: var(--font-mono);
+  font-size: var(--fs-metric);
+  font-weight: 600;
+  letter-spacing: var(--ls-title);
+}
+.quota-sur { font-size: var(--fs-body-s); color: var(--text-45); }
+
+.mentions {
+  margin: 0;
+  text-align: center;
+  font-size: var(--fs-meta);
+  color: var(--text-34);
+}
+.mentions code { color: var(--text-45); }
+
+/* ═══ CHRONO ══════════════════════════════════════════════════════ */
+
+.chrono-carte { align-items: stretch; gap: var(--sp-5); }
+
+.chrono-affichage {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-1);
+  padding: var(--sp-4) 0 0;
+}
+.chrono-valeur {
+  font-family: var(--font-mono);
+  font-size: 64px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: -2px;
+  font-variant-numeric: tabular-nums; /* le chiffre ne doit pas sautiller */
+}
+.chrono-etat {
+  font-size: var(--fs-body-s);
+  font-weight: 600;
+  color: var(--text-45);
+}
+/* Repos terminé : l'écran doit le crier, même de loin, même posé sur un banc. */
+.chrono-carte[data-etat="fini"] .chrono-valeur { color: var(--acc); }
+.chrono-carte[data-etat="fini"] .chrono-etat { color: var(--acc); }
+
+.chrono-jauge {
+  height: 6px;
+  border-radius: var(--r-pill);
+  background: var(--fill-6);
+  overflow: hidden;
+}
+.chrono-jauge-fill {
+  height: 100%;
+  border-radius: var(--r-pill);
+  background: var(--acc);
+  transition: width 0.25s linear;
+}
+@media (prefers-reduced-motion: reduce) {
+  .chrono-jauge-fill { transition: none; }
+}
+
+.chrono-presets { display: flex; gap: var(--sp-2); }
+.chrono-preset {
+  flex: 1;
+  min-height: 52px; /* ≫ 44 px : on l'appuie avec des mains moites, en série */
+  border-radius: var(--r-input);
+  border: 1px solid var(--line-10);
+  background: var(--fill-4);
+  color: var(--text-74);
+  font-family: var(--font-mono);
+  font-size: var(--fs-label);
+  font-weight: 600;
+}
+.chrono-preset:hover { background: var(--fill-8); color: var(--text); }
+.chrono-preset[aria-pressed="true"] {
+  background: var(--acc);
+  border-color: transparent;
+  color: var(--acc-ink);
+}
+
+.chrono-controles { display: flex; gap: var(--sp-2); }
+.chrono-controles[hidden] { display: none; }
+.chrono-ctrl {
+  flex: 1;
+  min-height: 48px;
+  border-radius: var(--r-input);
+  border: 1px solid var(--line-10);
+  background: var(--fill-4);
+  color: var(--text-74);
+  font-size: var(--fs-body);
+  font-weight: 700;
+}
+.chrono-ctrl:hover { background: var(--fill-8); color: var(--text); }
+.chrono-ctrl--stop { color: var(--danger); border-color: var(--danger-30); }
+
+/* ═══ ONGLETS ═════════════════════════════════════════════════════ */
+
+.onglets {
+  flex-shrink: 0;
+  display: flex;
+  border-top: 1px solid var(--line-8);
+  background: var(--surface);
+  padding-bottom: var(--safe-bas);
+}
+.onglet {
+  flex: 1;
+  min-height: 56px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  padding: var(--sp-2) 0;
+  border: none;
+  background: none;
+  color: var(--text-40);
+  font-size: var(--fs-caption);
+  font-weight: 700;
+  letter-spacing: 0.4px;
+}
+.onglet svg { width: 22px; height: 22px; }
+.onglet.est-actif { color: var(--acc); }
+
+/* ═══ TOASTS ══════════════════════════════════════════════════════ */
+
+.toasts {
+  position: fixed;
+  left: 50%;
+  bottom: calc(var(--safe-bas) + 72px);
+  transform: translateX(-50%);
+  z-index: 200;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  width: min(420px, calc(100% - 2 * var(--sp-5)));
+  pointer-events: none;
+}
+.toast {
+  padding: var(--sp-3) var(--sp-4);
+  border-radius: var(--r-input);
+  background: var(--surface-2);
+  border: 1px solid var(--line-12);
+  color: var(--text);
+  font-size: var(--fs-body-s);
+  line-height: 1.4;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  transition: opacity 0.3s ease, transform 0.3s ease;
+}
+.toast--succes { border-color: var(--acc-30); }
+.toast--erreur { background: var(--danger-12); border-color: var(--danger-30); }
+.toast.sort { opacity: 0; transform: translateY(8px); }
+@media (prefers-reduced-motion: reduce) {
+  .toast { transition: none; }
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   TAXONOMIE DE LA DONNÉE — MESURÉ · DÉRIVÉ · ESTIMÉ
+
+   🔗 Cette section est destinée à DISPARAÎTRE. La piste design écrit
+      `design/data.css` en ce moment ; il n'est pas encore sur `main`
+      (fichier non commité chez elle), donc pas liable d'ici — et le
+      copier créerait un second point de vérité, exactement ce qu'on
+      refuse pour tokens.css et states.css.
+      → Les noms de classe sont VOLONTAIREMENT identiques aux siens
+        (.val--mes / .val--der / .val--est / .why-*). Quand data.css
+        atterrit sur `main`, on supprime ce bloc et on ajoute un
+        <link> : **une ligne, zéro changement de markup**.
+
+   La règle (RECHERCHE-ux.md §6, philosophy.md règles 2 et 4) :
+     MESURÉ  saisi/capté      → précision pleine, DROIT à l'accent
+     DÉRIVÉ  calcul exact     → précision pleine, PAS d'accent
+     ESTIMÉ  sortie de modèle → « ~ », arrondi grossier, calibre réduit,
+                                ACCENT INTERDIT, « Pourquoi ? » obligatoire
+   ═══════════════════════════════════════════════════════════════════ */
+
+.val {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* MESURÉ — le solide. Seul niveau qui a droit à l'accent. */
+.val--mes { color: var(--text); font-size: var(--fs-label); letter-spacing: var(--ls-title); }
+.val--mes.val--strong { font-size: var(--fs-metric); }
+
+/* DÉRIVÉ — exact, mais ce n'est pas une observation. */
+.val--der { color: var(--text-74); font-size: var(--fs-metric-s); font-weight: 500; }
+
+/* ESTIMÉ — le fragile.
+   Le « ~ » est STRUCTUREL : il n'est pas dans le texte, il est dans la règle.
+   Un estimé rendu sans « ~ » est littéralement impossible. */
+.val--est {
+  color: var(--text-74);
+  font-size: var(--fs-body);
+  font-weight: 500;
+}
+.val--est::before { content: "~"; margin-right: 1px; color: var(--text-45); }
+
+/* ⛔ Accent interdit sur un estimé. Le !important est DÉLIBÉRÉ : c'est un
+   garde-fou produit, pas une préférence de style. Il rend impossible, depuis
+   un écran, la faute que Strava et Whoop commettent — peindre son chiffre le
+   plus fragile avec sa couleur la plus confiante. */
+.val--est, .val--est * {
+  color: var(--text-74) !important;
+  background-color: transparent !important;
+}
+
+/* ── « Pourquoi ? » — <details> natif : accessible, sans JS ────────── */
+.why { margin: 0; }
+.why-link {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-height: 44px;              /* cible tactile : le « pourquoi » n'est pas un détail */
+  padding: 0 var(--sp-3);
+  border: 1px solid var(--line-8);
+  border-radius: var(--r-md);
+  background: var(--fill-2);
+  color: var(--text-74);
+  font-size: var(--fs-meta);
+  cursor: pointer;
+  list-style: none;
+  width: fit-content;
+}
+.why-link::-webkit-details-marker { display: none; }
+.why-link:hover { background: var(--fill-4); color: var(--text); }
+.why[open] .why-link { margin-bottom: var(--sp-3); background: var(--fill-4); }
+.why-mark {
+  width: 15px; height: 15px;
+  border-radius: var(--r-pill);
+  background: var(--fill-8);
+  color: var(--text-55);
+  font-size: var(--fs-caption);
+  font-weight: 700;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+
+/* Deux temps IMPOSÉS (P21) : ce que je sais, puis ce que je ne sais pas.
+   Le second n'est pas optionnel — c'est lui qui nous sépare du centre d'aide
+   de Strava, où la réserve est rangée là où personne ne la lit. */
+.why-block { display: flex; flex-direction: column; gap: var(--sp-3); }
+.why-part-label {
+  display: block;
+  font-size: var(--fs-caption);
+  letter-spacing: var(--ls-caption);
+  text-transform: uppercase;
+  font-weight: 800;
+  color: var(--text-45);
+  margin-bottom: var(--sp-2);
+}
+.why-part p { margin: 0; font-size: var(--fs-why); line-height: 1.55; color: var(--text-74); white-space: pre-line; }
+.why-part p b { color: var(--text-strong); font-weight: 700; }
+.why-part--unknown {
+  padding: var(--sp-3) var(--sp-4);
+  border-radius: var(--r-md);
+  background: var(--fill-3);
+  border: 1px solid var(--line-8);
+  border-left: 2px solid var(--text-34);
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   ÉCRAN PROGRAMME — ce que le moteur a décidé, et pourquoi
+   ═══════════════════════════════════════════════════════════════════ */
+
+#prog { display: flex; flex-direction: column; gap: var(--sp-4); }
+#prog[hidden], #prog-etat[hidden] { display: none; }
+#prog-etat { display: flex; flex-direction: column; gap: var(--sp-4); }
+
+.kicker {
+  font-size: var(--fs-overline);
+  font-weight: 800;
+  letter-spacing: var(--ls-overline);
+  text-transform: uppercase;
+  color: var(--text-45);
+}
+.prog-split {
+  margin: 0;
+  font-size: var(--fs-title);
+  font-weight: 800;
+  letter-spacing: var(--ls-title);
+  text-transform: capitalize;
+}
+
+/* ── Le bloc ADAPTATIONS — le cœur du produit ─────────────────────── */
+.adapt { border-color: var(--line-12); gap: var(--sp-4); }
+.adapt-titre {
+  font-size: var(--fs-title-s);
+  text-transform: none;
+  letter-spacing: var(--ls-title);
+  color: var(--text);
+}
+.adapt-liste { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-2); }
+.adapt-item {
+  padding: var(--sp-3) var(--sp-4);
+  border-radius: var(--r-input);
+  background: var(--fill-3);
+  border: 1px solid var(--line-8);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+.adapt-tete { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; }
+.adapt-icone { font-size: var(--fs-label); line-height: 1; flex-shrink: 0; }
+.adapt-quoi { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
+.adapt-nom { font-size: var(--fs-body); font-weight: 700; color: var(--text); }
+.adapt-detail { font-size: var(--fs-meta); color: var(--text-45); }
+.adapt-bloc {
+  padding: var(--sp-4);
+  border-radius: var(--r-input);
+  background: var(--fill-3);
+  border: 1px solid var(--line-8);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+/* Le renvoi vers un professionnel de santé n'est jamais discret. */
+.adapt-bloc--pro { border-left: 2px solid var(--acc); background: var(--fill-4); }
+.adapt-bloc--fort { border-left: 2px solid var(--danger); }
+.adapt-sous-titre {
+  margin: 0;
+  font-size: var(--fs-label);
+  font-weight: 700;
+  letter-spacing: var(--ls-title);
+}
+.adapt-source { margin: 0; font-size: var(--fs-meta); color: var(--text-40); font-style: italic; }
+
+.puces { margin: 0; padding-left: var(--sp-5); display: flex; flex-direction: column; gap: var(--sp-2); }
+.puces li { font-size: var(--fs-body-s); line-height: 1.5; color: var(--text-55); }
+.puces li b { color: var(--text-strong); font-weight: 700; }
+.puces li code, .why-part code, .carte-note code {
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+  color: var(--text-74);
+}
+
+/* ── Tags ─────────────────────────────────────────────────────────── */
+.tag {
+  padding: 3px var(--sp-2);
+  border-radius: var(--r-sm);
+  background: var(--fill-6);
+  border: 1px solid var(--line-8);
+  color: var(--text-55);
+  font-size: var(--fs-meta);
+  font-weight: 600;
+  white-space: nowrap;
+}
+/* ⚠️ Volontairement PAS en accent : un tag « estimée » ne doit surtout pas
+   ressembler à une bonne nouvelle. */
+.tag--warn { color: var(--text-74); border-color: var(--line-12); background: var(--fill-8); }
+
+/* ── Sélecteur de jour ────────────────────────────────────────────── */
+.jours {
+  display: flex;
+  gap: var(--sp-2);
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding-bottom: 2px;
+}
+.jours::-webkit-scrollbar { display: none; }
+.jour-btn {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-height: 44px;
+  padding: var(--sp-2) var(--sp-3);
+  border-radius: var(--r-md);
+  background: var(--fill-4);
+  border: 1px solid var(--line-8);
+  color: var(--text-55);
+  font-family: inherit;
+  cursor: pointer;
+}
+.jour-btn:hover { background: var(--fill-8); color: var(--text); }
+.jour-btn.est-actif {
+  background: var(--acc-14);
+  border-color: var(--acc-30);
+  color: var(--text);
+}
+.jour-num { font-size: var(--fs-caption); font-weight: 800; letter-spacing: var(--ls-caption); color: var(--text-45); }
+.jour-btn.est-actif .jour-num { color: var(--acc); }
+.jour-nom { font-size: var(--fs-body); font-weight: 700; }
+
+/* ── La séance ────────────────────────────────────────────────────── */
+.seance-detail { display: flex; flex-direction: column; gap: var(--sp-4); }
+.seance-nom {
+  margin: 0;
+  font-size: var(--fs-title-s);
+  font-weight: 800;
+  letter-spacing: var(--ls-title);
+}
+.seance-stats { display: flex; gap: var(--sp-5); }
+.stat { display: flex; flex-direction: column; gap: 2px; }
+.stat-lab {
+  font-size: var(--fs-caption);
+  letter-spacing: var(--ls-caption);
+  text-transform: uppercase;
+  font-weight: 800;
+  color: var(--text-45);
+}
+
+.exos { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-3); }
+.exo {
+  padding: var(--sp-5);
+  border-radius: var(--r-card);
+  background: var(--surface);
+  border: 1px solid var(--line-8);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+.exo-tete { display: flex; flex-direction: column; gap: var(--sp-2); }
+.exo-nom { margin: 0; font-size: var(--fs-label); font-weight: 700; letter-spacing: var(--ls-title); }
+.exo-badges { display: flex; flex-wrap: wrap; gap: var(--sp-1); }
+
+/* La prescription : des CIBLES, pas des observations. Ni accent, ni traitement
+   « mesuré » — la taxonomie ne s'applique qu'aux valeurs qui prétendent décrire
+   l'utilisateur. */
+.exo-presc {
+  display: flex;
+  gap: var(--sp-2);
+  padding: var(--sp-3);
+  border-radius: var(--r-input);
+  background: var(--fill-3);
+}
+.presc-bloc {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-body);
+  color: var(--text-74);
+  text-align: center;
+}
+.presc-bloc b { color: var(--text); font-weight: 700; }
+.presc-lab {
+  font-family: var(--font-sans);
+  font-size: var(--fs-caption);
+  letter-spacing: var(--ls-caption);
+  text-transform: uppercase;
+  font-weight: 800;
+  color: var(--text-40);
+}
+
+.exo-charge { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; }
+.exo-charge-lab {
+  font-size: var(--fs-caption);
+  letter-spacing: var(--ls-caption);
+  text-transform: uppercase;
+  font-weight: 800;
+  color: var(--text-45);
+}
+.exo-charge-vide { font-size: var(--fs-body); color: var(--text-45); font-style: italic; }
+.exo-consigne, .exo-alt { margin: 0; font-size: var(--fs-body-s); line-height: 1.5; color: var(--text-50); }
+.exo-alt b { color: var(--text-74); font-weight: 700; }

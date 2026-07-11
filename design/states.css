@@ -1,0 +1,286 @@
+/* ═══════════════════════════════════════════════════════════════════
+   states.css — composants d'états réutilisables (vide / chargement / erreur)
+   prepa-physique · design system
+
+   Dépend de tokens.css (à lier AVANT ce fichier). Aucune valeur en dur :
+   couleurs, radii, typo et espacements dérivent tous des tokens.
+
+   ── Vocabulaire ────────────────────────────────────────────────────
+   .state              bloc d'état plein (dans une carte ou un écran)
+     .state--error     variante erreur (icône alerte, bordure appuyée)
+     .state--inline    variante compacte (une ligne dans une carte existante)
+     .state--screen    variante plein écran (première ouverture, onglet vide)
+   .sk-*               primitives de squelette (chargement)
+   .banner             bandeau d'information/erreur non bloquant (haut d'écran)
+
+   ── Règles d'usage ─────────────────────────────────────────────────
+   • Chargement : squelettes `aria-hidden="true"`, conteneur `aria-busy="true"`,
+     + une région `.sr-only` en `aria-live="polite"` qui annonce l'état.
+   • Erreur : toujours une action de récupération (« Réessayer ») et un message
+     qui dit ce qui est perdu / intact. Jamais de cul-de-sac.
+   • Vide : dire *pourquoi* c'est vide et *quoi faire* — une seule action
+     primaire. Le vide n'est pas une erreur : ton neutre, pas d'alerte.
+   • Cibles ≥ 44 px sur toutes les actions.
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* ── Utilitaire lecteur d'écran ──────────────────────────────────── */
+.sr-only {
+  position: absolute;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ═══ ÉTAT — bloc générique ═══════════════════════════════════════ */
+.state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: var(--sp-3);
+  padding: var(--sp-6) var(--sp-5);
+  border-radius: var(--r-input);
+  background: var(--fill-2);
+  border: 1px dashed var(--line-10);
+}
+
+.state-icon {
+  width: 44px; height: 44px;
+  border-radius: var(--r-pill);
+  display: flex; align-items: center; justify-content: center;
+  background: var(--acc-14);
+  color: var(--acc);
+  flex-shrink: 0;
+}
+.state-icon svg { display: block; }
+
+.state-title {
+  margin: 0;
+  font-family: var(--font-sans);
+  font-size: var(--fs-label);
+  font-weight: 700;
+  color: var(--text);
+  letter-spacing: var(--ls-title);
+}
+
+.state-msg {
+  margin: 0;
+  max-width: 30ch;
+  font-size: var(--fs-body-s);
+  line-height: 1.5;
+  color: var(--text-55);
+}
+.state-msg b { color: var(--text-strong); font-weight: 700; }
+
+.state-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+  justify-content: center;
+  margin-top: var(--sp-1);
+}
+
+/* Actions — cible ≥ 44 px */
+.state-btn {
+  min-height: 44px;
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: 0 var(--sp-5);
+  border: none;
+  border-radius: var(--r-btn);
+  background: var(--acc);
+  color: var(--acc-ink);
+  font-family: var(--font-sans);
+  font-size: var(--fs-body);
+  font-weight: 700;
+  cursor: pointer;
+}
+@media (hover: hover) and (pointer: fine) { .state-btn:hover { background: var(--acc-hover); } }
+.state-btn--ghost {
+  background: var(--fill-6);
+  color: var(--text-74);
+  border: 1px solid var(--line-10);
+}
+@media (hover: hover) and (pointer: fine) { .state-btn--ghost:hover { background: var(--fill-8); color: var(--text); } }
+
+/* ── Variante ERREUR ──────────────────────────────────────────────── */
+.state--error {
+  background: var(--danger-12);
+  border-style: solid;
+  border-color: var(--danger-30);
+}
+.state--error .state-icon {
+  background: var(--danger-12);
+  color: var(--danger);
+}
+
+/* ── Variante EN LIGNE (une ligne dans une carte existante) ───────── */
+.state--inline {
+  flex-direction: row;
+  align-items: center;
+  text-align: left;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-5);
+  background: none;
+  border: none;
+}
+.state--inline .state-icon { width: 28px; height: 28px; }
+.state--inline .state-msg {
+  max-width: none;
+  color: var(--text-45);
+}
+.state--inline .state-aside {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: var(--fs-body);
+  font-weight: 600;
+  color: var(--acc);
+  flex-shrink: 0;
+}
+
+/* ── Variante PLEIN ÉCRAN (onglet vide, première ouverture) ───────── */
+.state--screen {
+  min-height: 340px;
+  justify-content: center;
+  gap: var(--sp-4);
+  border: none;
+  background: none;
+}
+.state--screen .state-icon { width: 64px; height: 64px; }
+.state--screen .state-title { font-size: var(--fs-title-s); }
+.state--screen .state-msg { font-size: var(--fs-body); }
+
+/* ═══ CHARGEMENT — primitives de squelette ════════════════════════ */
+.sk {
+  background: linear-gradient(
+    90deg,
+    var(--fill-4) 25%,
+    var(--fill-8) 37%,
+    var(--fill-4) 63%
+  );
+  background-size: 400% 100%;
+  animation: sk-shimmer 1.4s ease-in-out infinite;
+  border-radius: var(--r-sm);
+}
+@keyframes sk-shimmer {
+  0%   { background-position: 100% 50%; }
+  100% { background-position: 0 50%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sk { animation: none; background: var(--fill-6); }
+}
+
+.sk-line { height: 12px; }
+.sk-line--sm { height: 9px; width: 55%; }
+.sk-line--lg { height: 24px; width: 70%; }
+.sk-block { height: 64px; border-radius: var(--r-input); }
+.sk-circle { width: 44px; height: 44px; border-radius: var(--r-pill); flex-shrink: 0; }
+
+/* Layouts de squelette (génériques, pas par écran) */
+.sk-row { display: flex; align-items: center; gap: var(--sp-3); }
+.sk-col { display: flex; flex-direction: column; gap: var(--sp-2); flex: 1; min-width: 0; }
+.sk-stack { display: flex; flex-direction: column; gap: var(--sp-3); }
+
+/* Libellé d'attente sous les squelettes (« Synchronisation Strava… ») */
+.state-hint {
+  margin: var(--sp-3) 0 0;
+  display: flex; align-items: center; gap: var(--sp-2);
+  font-size: var(--fs-meta);
+  font-weight: 600;
+  color: var(--text-45);
+}
+.state-hint .spinner {
+  width: 12px; height: 12px;
+  border-radius: var(--r-pill);
+  border: 2px solid var(--line-12);
+  border-top-color: var(--acc);
+  animation: sk-spin 0.8s linear infinite;
+  flex-shrink: 0;
+}
+@keyframes sk-spin { to { transform: rotate(360deg); } }
+/* « Fewer and gentler, NOT zero. » Un spinner FIGÉ est un mensonge : il dit
+   « l'app est plantée » alors qu'elle charge. Le mouvement disparaît, le
+   SIGNAL reste — l'anneau respire au lieu de tourner. C'est exactement ce que
+   la doctrine demande (garder ce qui aide à comprendre, retirer le
+   déplacement) — et exactement ce que la lib de son auteur ne fait pas. */
+@media (prefers-reduced-motion: reduce) {
+  .state-hint .spinner { animation: sk-breathe 1.4s ease-in-out infinite; }
+  @keyframes sk-breathe { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+}
+
+/* ═══ BANDEAU — erreur/info non bloquante (haut d'écran) ═══════════ */
+.banner {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+  border-radius: var(--r-input);
+  background: var(--fill-4);
+  border: 1px solid var(--line-10);
+  font-size: var(--fs-body-s);
+  color: var(--text-74);
+  line-height: 1.45;
+}
+.banner b { color: var(--text-strong); font-weight: 700; }
+.banner .banner-icon {
+  width: 20px; height: 20px;
+  flex-shrink: 0;
+  color: var(--text-55);
+  display: flex; align-items: center; justify-content: center;
+}
+.banner-action {
+  margin-left: auto;
+  min-height: 44px;
+  display: inline-flex; align-items: center;
+  padding: 0 var(--sp-3);
+  border: none;
+  border-radius: var(--r-md);
+  background: none;
+  color: var(--acc);
+  font-family: var(--font-sans);
+  font-size: var(--fs-body-s);
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+}
+@media (hover: hover) and (pointer: fine) { .banner-action:hover { color: var(--acc-hover); } }
+
+.banner--error {
+  background: var(--danger-12);
+  border-color: var(--danger-30);
+  color: var(--text-74);
+}
+.banner--error .banner-icon { color: var(--danger); }
+
+/* ═══ HARNAIS DE DÉMO — chrome de maquette, PAS un composant produit ═══
+   Les chips qui, hors device (dans .page-nav), basculent un écran d'un état
+   à l'autre. Sans eux les états sont invérifiables. Pilotés par
+   states-demo.js (contrat data-demo-* documenté dans ce fichier).
+   Volontairement < 44 px : chrome de proto, jamais rendu sur mobile. */
+.demo-label {
+  font-size: var(--fs-body-s);
+  color: var(--text-45);
+  font-weight: 600;
+}
+.demo-group { display: flex; align-items: center; gap: var(--sp-2); }
+.demo-chip {
+  padding: 7px 13px;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--line-10);
+  background: var(--fill-4);
+  color: var(--text-55);
+  font-family: var(--font-sans);
+  font-size: var(--fs-body-s);
+  font-weight: 700;
+  cursor: pointer;
+}
+@media (hover: hover) and (pointer: fine) { .demo-chip:hover { color: var(--text); } }
+.demo-chip[aria-pressed="true"] {
+  color: var(--acc-ink);
+  background: var(--acc);
+  border-color: transparent;
+}
