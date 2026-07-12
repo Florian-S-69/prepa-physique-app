@@ -161,10 +161,17 @@ export async function etatSauvegarde() {
   return { jamais: false, date, jours, aRappeler: jours >= SEUIL_RAPPEL_JOURS };
 }
 
-/** Phrase prête à afficher : « Dernière sauvegarde il y a 23 jours ». */
+/**
+ * L'ÉTAT de la sauvegarde — une ligne, une idée. « Dernière sauvegarde : il y a 23 jours ».
+ *
+ * ⚠️ Le cas `jamais` portait DEUX phrases (« Tu n'as jamais exporté tes données. Fais-le au
+ * moins tous les 14 jours. ») — l'état, puis l'ordre. C'est un paragraphe déguisé en libellé de
+ * statut. La cadence n'est pas perdue : elle est **soudée à l'état**, parce qu'elle EST l'état
+ * (jamais exporté = en retard depuis le premier jour).
+ */
 export function libelleSauvegarde(etat) {
-  if (etat.jamais) return "Tu n'as jamais exporté tes données.";
-  if (etat.jours === 0) return "Dernière sauvegarde : aujourd'hui.";
-  if (etat.jours === 1) return 'Dernière sauvegarde : hier.';
-  return `Dernière sauvegarde il y a ${etat.jours} jours.`;
+  if (etat.jamais) return `Jamais exporté — à faire tous les ${SEUIL_RAPPEL_JOURS} jours`;
+  if (etat.jours === 0) return "Dernière sauvegarde : aujourd'hui";
+  if (etat.jours === 1) return 'Dernière sauvegarde : hier';
+  return `Dernière sauvegarde : il y a ${etat.jours} jours`;
 }

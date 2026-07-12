@@ -19,7 +19,7 @@
  * portée de CONTRÔLE DE PAGES, pas d'interception d'URL.
  */
 
-const VERSION = 'v5';
+const VERSION = 'v6';
 const CACHE = `pp-shell-${VERSION}`;
 
 /** Le shell : tout ce qu'il faut pour que l'app démarre hors ligne. */
@@ -45,6 +45,12 @@ const SHELL = [
   // du produit ne s'ouvre pas — exactement quand on en a besoin.
   './js/seance.js',
   './js/ecran-seance.js',
+
+  // 🏃 La course. On logue une sortie de trail le dimanche, dans une vallée, sans réseau —
+  // exactement le moment où le précache sert. `ecran-seance.js` les importe : absents du
+  // shell, le module principal échoue à s'évaluer et l'accueil ne s'ouvre plus du tout.
+  './js/course.js',
+  './js/ecran-course.js',
   './fonts/fonts.css',
   './fonts/hanken-grotesk-latin.woff2',
   './fonts/hanken-grotesk-latin-ext.woff2',
@@ -85,6 +91,41 @@ const SHELL = [
   // pourquoi, la source — séparés). C'est ce que l'écran de séance affiche
   // derrière un tap. Absent du cache → pas d'écran de séance hors ligne.
   '../src/lib/avis.js',
+
+  // ══════════════════════════════════════════════════════════════════════
+  // 🔴 LES DOUZE MODULES QUI MANQUAIENT — L'OFFLINE NE TENAIT QUE PAR CHANCE
+  // ══════════════════════════════════════════════════════════════════════
+  //
+  // Le jour où la boucle a été refermée (2026-07-12), `moteur.js` s'est mis à importer
+  // `journal.js` et `adaptation.js` — qui tirent avec eux `charge.js`, `vdot.js`,
+  // `running.js`, `records.js`, `objectif.js`, `performances.js`, `distances.js`,
+  // `red-s.js`, `mode.js`, `angles-morts.js`. **Aucun n'a été ajouté ici.**
+  //
+  // Et rien ne l'a vu, parce que **le garde-fou ne regardait que dans un sens** : la règle
+  // R7 vérifie que tout ce qui est DÉCLARÉ ici existe dans `dist/`. Elle ne vérifiait pas
+  // que tout ce que l'app IMPORTE est déclaré ici. Une porte gardée d'un seul côté.
+  //
+  // Ce que ça coûtait : `cache.addAll` est **atomique** et il réussissait — sur un shell
+  // à trous. L'app ne s'ouvrait hors ligne que si le `stale-while-revalidate` avait déjà
+  // avalé ces douze fichiers lors d'un chargement ANTÉRIEUR **contrôlé par le SW**. Ça
+  // finit par arriver, donc ça « marchait ». **Une garantie qui repose sur la chance n'est
+  // pas une garantie** — et le jour où elle tombe, elle tombe en salle, en sous-sol, au
+  // seul moment où l'app sert.
+  //
+  // → Le garde-fou manquant est désormais un TEST (`tests/build.test.js`) : la fermeture
+  //   transitive des imports de `app/js/main.js` DOIT être incluse dans ce tableau.
+  '../src/lib/journal.js',
+  '../src/lib/adaptation.js',
+  '../src/lib/charge.js',
+  '../src/lib/vdot.js',
+  '../src/lib/performances.js',
+  '../src/lib/distances.js',
+  '../src/lib/running.js',
+  '../src/lib/red-s.js',
+  '../src/lib/records.js',
+  '../src/lib/objectif.js',
+  '../src/lib/angles-morts.js',
+  '../src/lib/mode.js',
 
   // Les données. `exercises.json` (848 Ko, free-exercise-db, domaine public) est
   // le référentiel : sans lui, pas de programme. Il est gros MAIS téléchargé une

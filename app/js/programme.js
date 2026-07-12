@@ -143,12 +143,24 @@ function rendreAvisHaut(p) {
     }));
   }
 
-  // 🔥 Échauffement imposé — un état (imposé), pas un plaidoyer de six paragraphes.
+  // 🔥 L'ÉCHAUFFEMENT — une SECTION, pas une sommation.
+  //
+  // Il disait : « Échauffement **imposé** — 6 consignes ». Verdict de l'utilisateur : *« À la
+  // limite, une petite section échauffement, pourquoi pas. Mais pas "échauffement imposé", tirer
+  // six consignes. »* Deux fautes dans cinq mots :
+  //   · **imposé** est un ordre — l'app somme au lieu de nommer un état ;
+  //   · **6 consignes** annonce une conférence avant même de l'avoir ouverte. Un compteur qui
+  //     prévient de la longueur de ce qu'on va lire est une raison de ne pas le lire.
+  //
+  // ⚠️ **Le CONTENU ne bouge pas d'un mot.** L'échauffement reste OBLIGATOIRE (une limitation
+  //    ACTIVE le déclenche), la ligne garde sa gravité `alerte`, et la feuille contient toujours
+  //    les six consignes, le constat, le « pourquoi imposé » et l'alerte du moteur — mot pour mot.
+  //    On retire la MISE EN SCÈNE, pas la règle de sécurité.
   const e = l?.echauffement;
   if (e?.impose) {
     zone.append(ligneEtat({
       icone: '🔥',
-      texte: `Échauffement **imposé** — ${(e.consignes ?? []).length} consignes`,
+      texte: 'Échauffement',
       gravite: 'alerte',
       go: 'Voir',
       faire: () => {
@@ -495,10 +507,59 @@ function rendreExercice(exo, notesRef, avis) {
 
 let etat = null; // { persona, programme, notesRef, avis, jour }
 
+/**
+ * 🔴 LE JOUR N'EST PAS LA SÉANCE — et cet écran les confondait.
+ *
+ * Le sélecteur affiche la SEMAINE (7 jours, quand il court). `p.seances` est le CYCLE du split
+ * (3 séances en PPL). `rendreJour(i)` faisait `p.seances[i]` : à partir du **jeudi**, l'index
+ * sortait du tableau, `seance.nom` levait un `TypeError` et **le panneau restait vide.**
+ * **Quatre onglets sur sept étaient morts** — celui du dimanche compris.
+ *
+ * Personne ne l'avait vu parce que le libellé du jour RECOPIAIT le nom de la séance : à l'œil,
+ * « Jeudi — Push » avait l'air branché sur quelque chose. **Un nom recopié n'est pas un lien.**
+ * Le moteur rend désormais le lien (`programme.semaine[i].seance` = l'index réel), et un jour
+ * sans séance (course, repos) est un ÉTAT que cet écran sait rendre — plus un trou où il tombe.
+ */
+const jourDe = (p, i) => p.semaine?.[i] ?? { seance: i, course: null, jambes_lourdes: false };
+
+/**
+ * Ce que le PLACEMENT dit de ce jour-là — une ligne, le pourquoi derrière le tap.
+ *
+ * Le moteur produit deux faits par jour (`semaine[i]`) : la séance laisse-t-elle les jambes
+ * lourdes, et ce jour porte-t-il la séance-clé de course ? Ils étaient **imprimés dans le
+ * libellé de l'onglet** (« Legs 🦵 _(jambes lourdes)_ »). Ils reviennent ici : sous la séance
+ * concernée, en une ligne, avec la règle complète — celle du moteur, mot pour mot — sous le doigt.
+ */
+function lignePlacement(p, j) {
+  if (!p.placement || (!j.jambes_lourdes && !j.course_qualitative)) return null;
+  const pourquoi = () => blocPourquoi([
+    { label: SAIT, texte: p.placement.pourquoi },
+    { label: 'La fenêtre appliquée', texte: p.placement.fenetre?.origine_declaree ?? '', sourdine: true },
+  ]);
+
+  const zone = el('div', 'lignes-etat');
+  if (j.jambes_lourdes) {
+    zone.append(ligneEtat({
+      icone: '🦵',
+      texte: 'Jambes lourdes',
+      faire: () => feuille('Jambes lourdes', pourquoi()),
+    }));
+  }
+  if (j.course_qualitative) {
+    zone.append(ligneEtat({
+      icone: '🏃',
+      texte: 'Séance-clé — à protéger',
+      faire: () => feuille('Séance-clé', pourquoi()),
+    }));
+  }
+  return zone;
+}
+
 function rendreJour(i) {
   etat.jour = i;
   const { programme: p, avis } = etat;
-  const seance = p.seances[i];
+  const j = jourDe(p, i);
+  const seance = j.seance != null ? p.seances[j.seance] : null;
 
   for (const b of document.querySelectorAll('.jour-btn')) {
     const actif = Number(b.dataset.jour) === i;
@@ -508,7 +569,25 @@ function rendreJour(i) {
 
   const hote = $('#seance-detail');
   hote.replaceChildren();
+
+  // Un jour SANS séance de salle n'est pas une panne : c'est une course, ou du repos. On le
+  // NOMME. (Avant, on y lisait un panneau vide et une exception dans la console.)
+  if (!seance) {
+    hote.append(el('h2', 'seance-nom', echapper(j.course ?? 'Repos')));
+    const l = lignePlacement(p, j);
+    if (l) hote.append(l);
+    return;
+  }
+
   hote.append(el('h2', 'seance-nom', echapper(seance.nom)));
+  // La liste des muscles vit ICI, où l'on PLANIFIE — pas dans le titre, où elle passait à la
+  // ligne, ni dans l'en-tête d'une séance en cours, où elle était tronquée en plein mot.
+  if (seance.focus) hote.append(el('p', 'seance-focus', echapper(seance.focus)));
+
+  // 🦵 « Jambes lourdes » : une ligne d'état, à sa place — sur la séance qui les fabrique, et
+  // seulement là. C'était un décor collé à l'onglet du jour, qui triplait sa largeur.
+  const placementDuJour = lignePlacement(p, j);
+  if (placementDuJour) hote.append(placementDuJour);
 
   // Trois chiffres de tête, pas quatre. Tous DÉRIVÉS : des sommes exactes sur le
   // programme, pas des modèles.
@@ -687,6 +766,11 @@ function rendre() {
   // Markdown — comme partout, puisque le moteur rend aussi du Markdown en CLI. Cet écran
   // l'échappait au lieu de le STYLISER. `riche()` échappe PUIS stylise : la protection
   // contre l'injection est identique.
+  //
+  // ⚠️ Un onglet porte UN JOUR et UN NOM. Rien d'autre. Le marqueur « 🦵 (jambes lourdes) »
+  //    y était collé : l'onglet du mercredi devenait trois fois plus large que les autres et
+  //    poussait jeudi → dimanche hors de l'écran. Le fait n'est pas perdu — il est descendu
+  //    sous la séance (`lignePlacement`), là où il veut dire quelque chose.
   p.jours.forEach((nom, i) => {
     const b = el('button', 'jour-btn');
     b.type = 'button';
@@ -707,12 +791,11 @@ function rendre() {
   const bas = rendreAvisBas(p, persona);
   if (bas) hote.append(bas);
 
+  // Le disclaimer médical RESTE À PLAT — c'est sa place (philosophy §3) : un avertissement légal
+  // derrière un tap n'avertit personne. Mais deux phrases pour dire une chose en font une prose :
+  // la première n'existait que pour poser la seconde. Une phrase, le même fait.
   hote.append(
-    el(
-      'p',
-      'mentions',
-      "Ce programme est généré à titre d'information générale. Il ne remplace pas l'avis d'un professionnel de santé.",
-    ),
+    el('p', 'mentions', "Information générale — ne remplace pas l'avis d'un professionnel de santé."),
   );
 
   hote.hidden = false;
@@ -806,7 +889,11 @@ export async function afficherProgramme() {
     }
     // 🔴 `cible` et `records` viennent du MOTEUR (adaptation.js → objectif.js / records.js).
     // L'app ne les recalcule pas : elle les AFFICHE. Deux calculs, deux vérités qui divergeraient.
-    const { persona, programme, cible } = resultat;
+    // 🏃 `charge` (la jauge unifiée sRPE) et `placement` (le conflit jambes lourdes ↔ séance-clé)
+    //    aussi — et jusqu'au 2026-07-12, cette ligne les JETAIT. Elles sortent du même tour de
+    //    moteur ; l'écran de séance les consomme (`initSeance`). On ne fait pas tourner le moteur
+    //    deux fois pour afficher deux vues du même journal.
+    const { persona, programme, cible, charge, placement } = resultat;
 
     // Le persona explique lui-même pourquoi telle charge est une estimation :
     // on garde ses notes sous la main pour les « ? ».
@@ -823,7 +910,7 @@ export async function afficherProgramme() {
     $('#prog-etat').hidden = true;
     $('#prog-etat').replaceChildren();
     rendre();
-    return { persona, programme, cible };
+    return { persona, programme, cible, charge, placement };
   } catch (e) {
     erreur(e);
     throw e;

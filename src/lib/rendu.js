@@ -724,6 +724,23 @@ function chargeAffichee(e) {
   return "";
 }
 
+/**
+ * Les marqueurs d'un jour — 🦵 jambes lourdes, 🏃 séance-clé.
+ *
+ * 🔴 ILS VIVENT ICI, DANS LE RENDU. Ils étaient collés au libellé **par le moteur**
+ * (`muscu.js`), qui fabriquait donc du Markdown à destination d'un écran de 390 px : l'app en
+ * faisait le texte d'un onglet de jour, l'onglet triplait de largeur et poussait la fin de la
+ * semaine hors du cadre. Le moteur produit des **faits** (`semaine[i].jambes_lourdes`) ; chaque
+ * rendu décide ensuite comment les montrer. Le CLI les remet en Markdown — la sortie est
+ * inchangée, au caractère près.
+ */
+function marqueursJour(j) {
+  return (
+    (j.jambes_lourdes ? " 🦵 _(jambes lourdes)_" : "") +
+    (j.course_qualitative ? " 🏃 _(séance-clé : à protéger)_" : "")
+  );
+}
+
 export function rendreMuscu(persona, p) {
   const legende = [];
   if (p.seances.some((s) => s.exercices.some((e) => e.substitue_depuis))) legende.push("🔁 exercice **remplacé** par une variante mieux tolérée (limitation)");
@@ -733,7 +750,7 @@ export function rendreMuscu(persona, p) {
 
   const seancesMd = p.seances
     .map(
-      (s) => `### ${s.nom}${p.frequence > 1 ? ` — ×${Math.round(p.frequence * 10) / 10}/sem` : ""}
+      (s) => `### ${s.nom}${s.focus ? ` (${s.focus})` : ""}${p.frequence > 1 ? ` — ×${Math.round(p.frequence * 10) / 10}/sem` : ""}
 
 ${blocEchauffementSeance(s.echauffement)}
 ${tableau(
@@ -777,7 +794,7 @@ ${p.note_split}
 
 ${blocEchauffement(p)}
 ## Semaine type
-${p.jours.map((j) => `- ${j}`).join("\n")}
+${p.semaine.map((j) => `- ${j.libelle}${marqueursJour(j)}`).join("\n")}
 
 ${seancesMd}
 ${legende.length ? `\n${legende.map((l) => `- ${l}`).join("\n")}\n` : ""}${p.charges_reprises?.length ? `

@@ -214,7 +214,7 @@ export const SLOTS = {
   },
   hinge_ischios: {
     pattern: "hinge",
-    consigne: "Excentrique lent (3 s), pointes de pieds vers soi",
+    consigne: "Excentrique lent 3 s, pointes de pieds vers soi",
     candidats: ["Lying_Leg_Curls", "Seated_Leg_Curl", "Ball_Leg_Curl", "Floor_Glute-Ham_Raise"],
   },
   push_h_principal: {
@@ -225,7 +225,7 @@ export const SLOTS = {
   },
   push_h_incline: {
     pattern: "push_h",
-    consigne: "30–45°, descente profonde (étirement du pectoral)",
+    consigne: "30–45°, descente profonde pour étirer le pectoral",
     candidats: ["Barbell_Incline_Bench_Press_-_Medium_Grip", "Hammer_Grip_Incline_DB_Bench_Press", "Push-Ups_With_Feet_Elevated"],
     variantes_tolerees: ["Smith_Machine_Incline_Bench_Press"],
   },
@@ -256,7 +256,7 @@ export const SLOTS = {
   },
   pull_v_principal: {
     pattern: "pull_v",
-    consigne: "Départ bras tendus (étirement), poitrine vers la barre",
+    consigne: "Départ bras tendus en étirement, poitrine vers la barre",
     candidats: ["Pullups", "Wide-Grip_Lat_Pulldown", "Chin-Up", "Band_Assisted_Pull-Up"],
   },
   iso_biceps: {
@@ -271,7 +271,7 @@ export const SLOTS = {
   },
   iso_mollets: {
     pattern: "isolation",
-    consigne: "Pause en bas (étirement), monter haut",
+    consigne: "Pause en étirement en bas, monter haut",
     candidats: ["Standing_Calf_Raises", "Standing_Barbell_Calf_Raise", "Standing_Dumbbell_Calf_Raise", "Calf_Raises_-_With_Bands"],
   },
   core_iso: {

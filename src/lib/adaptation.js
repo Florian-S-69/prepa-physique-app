@@ -318,7 +318,24 @@ export function programmeAdapteMuscu(personaBrut, journal, referentiel) {
   const records = recordsMuscu(journal);
   const cible = evaluerCible(persona, journal, programme);
 
-  return { persona, brut, programme, adaptation, progression, charge, recalage, records, cible };
+  // 6. 🔴 LE PLACEMENT OBSERVÉ — « pas de jambes lourdes moins de 24–48 h avant une séance de
+  //    course qualitative ». C'est la Couche 2 de l'ADR 0006 : la règle la mieux étayée du moteur
+  //    sur l'hybride, **et la seule qui ne demande AUCUNE calibration**.
+  //
+  //    ⚠️ Elle était écrite, testée (`tests/placement.test.js`), publiée dans `dist/`… et **appelée
+  //    uniquement par `genererBilan`**, c'est-à-dire par le CLI. L'app, elle, ne l'atteignait pas :
+  //    `programmeAdapteMuscu` est la SEULE porte du moteur que l'écran franchit. **C'est le même
+  //    motif que `versEntreeJournal()` — le moteur SAIT, et l'app ne DEMANDE pas.** Ici, elle demande.
+  //
+  //    Rigoureusement les mêmes arguments que dans `genererBilan` : deux appels qui divergeraient,
+  //    ce serait deux vérités sur la même semaine.
+  const placement = aDesSeances
+    ? conflitsObserves(journal, referentiel, {
+        zone_jambes_active: zoneJambesActive(validerLimitations(limitationsDe(persona)).valides),
+      })
+    : null;
+
+  return { persona, brut, programme, adaptation, progression, charge, placement, recalage, records, cible };
 }
 
 // ---------------------------------------------------------------- running

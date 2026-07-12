@@ -54,13 +54,16 @@ import { normaliserPersona } from '../../src/lib/personne.js';
 import { chargerReferentiel } from '../../src/lib/exercices.js';
 // 🔴 `journal.js` et `adaptation.js` (et `charge.js`, via elle) étaient publiés
 // dans `dist/` et importés par PERSONNE. Voici leur premier appelant.
-import { journalVide, ajouterSeanceMuscu } from '../../src/lib/journal.js';
+// 🏃 `ajouterSortie` rejoint la liste le 2026-07-12 : le journal savait recevoir une COURSE
+//    depuis toujours — c'est l'app qui n'avait aucun moyen d'en produire une.
+import { journalVide, ajouterSeanceMuscu, ajouterSortie } from '../../src/lib/journal.js';
 import { programmeAdapteMuscu } from '../../src/lib/adaptation.js';
 // La cible est validée par le MOTEUR, jamais par l'app : une seconde règle divergerait.
 import { normaliserCible } from '../../src/lib/objectif.js';
 import { versEntreeJournal } from './seance.js';
+import { versEntreeSortie } from './course.js';
 import { AMORCE } from './amorce.js';
-import { lireMeta, ecrireMeta, lireTout } from './db.js';
+import { lireMeta, ecrireMeta, lireTout, ecrire, supprimer, nouvelId } from './db.js';
 
 /** Clé du persona dans le magasin `meta`. */
 export const CLE_PERSONA = 'persona';
@@ -285,8 +288,78 @@ export async function chargerJournal(persona = null) {
       rejets.push({ id: enr?.id ?? null, date: enr?.date ?? null, message: e.message });
     }
   }
+
+  // 🏃 🔴 LES COURSES ENTRENT DANS LE MÊME JOURNAL. C'est **la** ligne qui rend le
+  // différenciateur possible : `journal.sorties_course` est le tiroir que `charge.js` (la jauge
+  // unifiée sRPE) et `placement.js` (le conflit jambes lourdes ↔ séance-clé) lisent depuis le
+  // premier jour — et qui était **structurellement vide**, parce que rien ne pouvait le remplir.
+  //
+  // ⚠️ Pas de deuxième journal, pas de deuxième moteur : **le même objet**. Muscu et course
+  // n'ont jamais été deux produits ; elles étaient deux listes du même journal, et l'app n'en
+  // remplissait qu'une.
+  const sorties = (await lireTout('sorties')) ?? [];
+  sorties.sort((a, b) => String(a.date).localeCompare(String(b.date)));
+  for (const s of sorties) {
+    try {
+      ajouterSortie(journal, s);
+    } catch (e) {
+      console.error(`[moteur] sortie ${s?.id} (${s?.date}) refusée par le journal :`, e);
+      rejets.push({ id: s?.id ?? null, date: s?.date ?? null, message: e.message });
+    }
+  }
+
   return { journal, rejets };
 }
+
+// ── 🏃 LES COURSES — le magasin `sorties` ─────────────────────────────
+//
+// ⚠️ **On n'écrit PAS un champ que le moteur ne lit pas.** Ce projet a produit ce bug **trois
+// fois**. Ici, la boucle est vérifiable en une ligne : `chargerJournal()` (juste au-dessus) verse
+// chaque sortie dans `journal.sorties_course`, que `programmeAdapteMuscu()` passe à `chargesHebdo`
+// (la jauge) et à `conflitsObserves` (le placement). **Un test tombe si cette chaîne se rompt.**
+
+/** Les sorties enregistrées, les plus anciennes en premier. */
+export async function chargerSorties() {
+  const sorties = (await lireTout('sorties')) ?? [];
+  return sorties.sort((a, b) => String(a.date).localeCompare(String(b.date)));
+}
+
+/**
+ * 🏃 **Loguer une course.** Le premier geste de course que cette app ait jamais su faire.
+ *
+ * 🔴 **La validation vit dans le MOTEUR**, pas ici : `ajouterSortie()` (src/lib/journal.js) borne
+ * la distance, la durée, le RPE (Foster 0–10), n'accepte que les cinq zones E/M/T/I/R — et
+ * **refuse `denivele_negatif_m: 0`** avec ses propres mots (« un zéro faux éteint le seul signal
+ * de fatigue mesurable »). On l'appelle sur un journal JETABLE : s'il lève, rien n'est écrit ; s'il
+ * passe, l'entrée qu'il a **normalisée** est celle qu'on persiste.
+ *
+ * Une seconde validation dans l'app, ce serait deux règles qui divergeront — et celle du navigateur
+ * serait la mauvaise, celle que les tests du moteur ne couvrent pas.
+ *
+ * ⚠️ `rpe_seance` peut rester **`null`**, et c'est VOLONTAIRE. La sortie est le **produit** ; le RPE
+ * est une **annotation**. Verrouiller l'enregistrement d'une course derrière une note facultative,
+ * ce serait refaire, mot pour mot, le bug du carnet ([[philosophy]] règle 15). Le coût de ce trou
+ * n'est pas caché pour autant : **sans RPE, la sortie ne porte aucune charge** — `charge.js` le dit,
+ * `journal.donneesManquantes()` le signale, et l'écran l'écrit.
+ *
+ * @param {object} saisie  ce que le formulaire a produit (des chaînes)
+ * @returns {Promise<object>} la sortie réellement écrite (normalisée par le moteur, + son `id`).
+ */
+export async function enregistrerSortie(saisie) {
+  const entree = versEntreeSortie(saisie);
+
+  // Le juge, c'est le moteur. Un journal jetable, uniquement pour lui poser la question.
+  const jetable = journalVide(null);
+  ajouterSortie(jetable, entree); // lève avec un message écrit pour un humain
+  const normalisee = jetable.sorties_course[0];
+
+  const sortie = { id: nouvelId(), ...normalisee };
+  await ecrire('sorties', sortie);
+  return sortie;
+}
+
+/** Retirer une course. Une donnée fausse empoisonne la jauge — elle doit pouvoir partir. */
+export const supprimerSortie = (id) => supprimer('sorties', id);
 
 // ── Génération ────────────────────────────────────────────────────────
 
@@ -308,7 +381,11 @@ export async function chargerJournal(persona = null) {
  * profil n'a aucune raison d'attendre 848 Ko d'exercices pour qu'on lui dise
  * qu'il n'a pas de profil.
  *
- * @returns {Promise<{persona, brut, programme, adaptation, charge, journal, rejets, amorce}|null>}
+ * 🏃 Depuis le 2026-07-12, `charge` (la jauge unifiée sRPE : muscu **+** course, ADR 0006) et
+ * `placement` (le conflit « jambes lourdes < 24–48 h avant une séance-clé ») sortent d'ici. Les
+ * deux étaient calculés par le moteur et **jetés** par l'app.
+ *
+ * @returns {Promise<{persona, brut, programme, adaptation, charge, placement, cible, records, journal, rejets, amorce}|null>}
  */
 export async function genererProgramme() {
   const { brut, persona, amorce } = await chargerPersona();

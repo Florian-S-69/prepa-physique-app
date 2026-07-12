@@ -84,6 +84,11 @@ import {
   bip, amorcerAudio, formaterChrono, garderEcranAllume, libererEcran,
   wakeLockSupporte,
 } from './timer.js';
+// 🏃 🔴 LA COURSE. L'app faisait la MOITIÉ de son sport : le moteur savait générer un plan,
+// additionner un squat et un 10 km (ADR 0006) et détecter des jambes lourdes avant une séance-clé
+// — et l'écran ne savait recevoir **aucune** course. Ces quatre-là referment le trou.
+import { chargerSorties } from './moteur.js';
+import { ouvrirSaisieCourse, carteCharge, lignesPlacement, boutonCourse, carteDerniereCourse } from './ecran-course.js';
 // La limite du Wake Lock n'est pas la même sur iOS et sur Android : on dit CELLE
 // de son téléphone, pas une excuse qui ne le concerne pas.
 import { regimeStockage } from './install.js';
@@ -96,6 +101,10 @@ let persona = null;         // son poids de corps y est — et il n'est PAS dans
 let avis = [];
 let etat = null;            // la séance en cours (null = pas commencée)
 let historique = [];        // les séances déjà enregistrées
+// 🏃 Les trois qui étaient calculés par le moteur et JETÉS par l'app.
+let charge = null;          // `chargesHebdo()` — la jauge unifiée sRPE (muscu + course), ADR 0006
+let placement = null;       // `conflitsObserves()` — jambes lourdes < 24–48 h avant une séance-clé
+let sorties = [];           // les courses loguées
 let mode = 'log';           // 'log' | 'edit'
 let edition = null;         // { bloc, serie } en correction
 let brouillonCourant = { charge_kg: null, reps: 0 };
@@ -151,17 +160,23 @@ async function sauver() {
 export async function initSeance(resultat) {
   programme = resultat?.programme ?? null;
   persona = resultat?.persona ?? null;
+  // 🏃 La jauge et le placement viennent du MOTEUR (`adaptation.js programmeAdapteMuscu`), avec le
+  // programme, dans le même tour. On ne les recalcule pas : deux calculs, deux vérités.
+  charge = resultat?.charge ?? null;
+  placement = resultat?.placement ?? null;
   avis = programme?.limitations ? adaptationsMuscuEnAvis(programme.limitations) : [];
 
   try {
     historique = (await lireTout('seances')) ?? [];
     historique.sort((a, b) => String(a.date).localeCompare(String(b.date)));
+    sorties = await chargerSorties();
     const reprise = await lireMeta(CLE_EN_COURS, null);
     // Une séance reprise doit correspondre au programme actuel : si le profil a
     // changé entre-temps, ses exercices ne veulent plus rien dire.
     etat = reprise?.blocs?.length ? reprise : null;
   } catch (e) {
     historique = [];
+    sorties = [];
     etat = null;
     toast(`Base illisible : ${e.message}`, 'erreur');
   }
@@ -190,11 +205,31 @@ async function rafraichirProgramme() {
     if (resultat?.programme) {
       programme = resultat.programme;
       persona = resultat.persona ?? persona;
+      // 🏃 La jauge et le placement RE-TOURNENT avec le programme. Sans ces deux lignes, on
+      // logue une course… et la charge affichée reste celle d'avant : le champ se remplit et
+      // l'écran ne bouge pas. **C'est le bug de ce projet, pour la quatrième fois.**
+      charge = resultat.charge ?? null;
+      placement = resultat.placement ?? null;
       avis = programme.limitations ? adaptationsMuscuEnAvis(programme.limitations) : [];
     }
   } catch (e) {
     console.error('[seance] le programme n’a pas pu être régénéré :', e);
   }
+}
+
+/**
+ * 🏃 Après une course : le moteur re-tourne (la course entre au journal → la jauge et le placement
+ * changent), le carnet des sorties se relit, l'écran se re-rend. **La boucle se referme tout de
+ * suite** — on ne demande pas de fermer et rouvrir l'app pour voir sa charge bouger.
+ */
+async function apresCourse() {
+  await rafraichirProgramme();
+  try {
+    sorties = await chargerSorties();
+  } catch (e) {
+    console.error('[seance] les sorties n’ont pas pu être relues :', e);
+  }
+  rendre();
 }
 
 // ══════════════════════════════════════════════════════════════════════
@@ -715,6 +750,17 @@ function rendreAccueil() {
     return `${derive(s.exercices.length)} exercices · ${derive(series)} séries`;
   };
 
+  // ── 🔴 LE CONFLIT DE PLACEMENT — AVANT le geste, comme la sécurité sur l'écran Programme ──
+  //
+  // « Tu as fait des jambes lourdes il y a 24 h, ta séance-clé de course va en pâtir. » C'est un
+  // fait OBSERVÉ (`placement.js conflitsObserves`), pas une prédiction — et c'est **le seul
+  // différenciateur livrable sans aucune calibration**. Le mettre sous la carte de démarrage, ce
+  // serait le mettre après la décision qu'il doit éclairer.
+  //
+  // ⚠️ Ce n'est PAS un reproche. « Ce n'est pas une faute morale : c'est un placement à corriger. »
+  const conflits = lignesPlacement(placement);
+  if (conflits) hote.append(conflits);
+
   // ── LE PROTAGONISTE ─────────────────────────────────────────────────
   // Le kicker dit d'où il sort : la rotation du cycle, ou son début. Il n'affirme
   // rien sur « aujourd'hui » — l'app ne sait pas quel jour il s'entraîne, et elle
@@ -753,6 +799,18 @@ function rendreAccueil() {
   });
   if (liste.children.length) hote.append(liste);
 
+  // ── 🏃 LE GESTE QUI MANQUAIT — loguer une course ─────────────────────
+  // Il est ICI, sur l'écran qu'il ouvre 6 jours sur 7, sous les séances de salle : la course n'est
+  // pas un module à part, c'est **l'autre moitié du même entraînement**. C'est d'ailleurs toute la
+  // thèse du produit — et jusqu'ici elle n'existait que dans un commentaire.
+  hote.append(boutonCourse(() => ouvrirSaisieCourse({ apres: apresCourse })));
+
+  // ── 🔴 LA JAUGE UNIFIÉE — muscu + course, UNE charge ─────────────────
+  // « Ce que ni Strava ni Hevy ne savent faire. » Elle était calculée (`charge.js chargesHebdo`,
+  // ADR 0006) et affichée NULLE PART. La voici.
+  const jauge = carteCharge(charge);
+  if (jauge) hote.append(jauge);
+
   // Ce qu'elle a mémorisé. Discret, factuel — et c'est ce qui EXPLIQUE le protagoniste
   // ci-dessus : la dernière séance dit d'où vient la suivante.
   if (historique.length) {
@@ -773,6 +831,10 @@ function rendreAccueil() {
     c.append(l);
     hote.append(c);
   }
+
+  // 🏃 …et la dernière course. La preuve, à l'écran, qu'elle est entrée quelque part.
+  const derniereCourse = carteDerniereCourse(sorties, { onSupprimer: apresCourse });
+  if (derniereCourse) hote.append(derniereCourse);
 }
 
 /**

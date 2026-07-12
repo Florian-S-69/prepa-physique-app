@@ -340,7 +340,14 @@ export function chargeSortie(sortie) {
 
 const JOUR_MS = 24 * 3600 * 1000;
 
-function lundiDe(date) {
+/**
+ * Le lundi de la semaine d'une date (« AAAA-MM-JJ » → « AAAA-MM-JJ »).
+ *
+ * ⚠️ EXPORTÉE depuis le 2026-07-12 : c'est elle qui découpe `chargesHebdo().semaines`, et l'app doit
+ * pouvoir retrouver LA semaine en cours dans cette liste. Recoder « le lundi d'une date » côté écran,
+ * ce serait deux définitions de la semaine — et un jour, deux semaines différentes (philosophy §11).
+ */
+export function lundiDe(date) {
   const d = new Date(date + "T00:00:00Z");
   return new Date(d.getTime() - ((d.getUTCDay() + 6) % 7) * JOUR_MS).toISOString().slice(0, 10);
 }

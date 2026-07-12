@@ -698,6 +698,15 @@ main > section {
   font-weight: 800;
   letter-spacing: var(--ls-title);
 }
+/* Les muscles travaillés — une ÉTIQUETTE, pas une parenthèse dans le titre.
+   Dans le titre, ils le faisaient passer à la ligne et repoussaient le geste ;
+   dans l'en-tête d'une séance en cours, ils étaient tronqués en plein mot
+   (« PUSH (PECTORAUX, ÉPAULES, … »). Ici, ils se lisent — et ne pèsent rien. */
+.seance-focus {
+  margin: 2px 0 0;
+  color: var(--text-45);
+  font-size: var(--fs-body-s);
+}
 .seance-stats { display: flex; gap: var(--sp-5); }
 .stat { display: flex; flex-direction: column; gap: 2px; }
 .stat-lab {
@@ -1573,14 +1582,31 @@ body.en-seance main { padding-bottom: calc(var(--sc-bar-h) + var(--sp-4)); }
 
 /* La gravité se voit sur le LISERÉ, pas sur un aplat de couleur : un écran
    qui crie partout ne crie plus nulle part — et le bruit fait désactiver ce
-   qui protège. Le renvoi médical est le seul à porter l'accent. */
+   qui protège. Le renvoi médical est le seul à porter l'accent.
+
+   🔴 CETTE RÈGLE SE CONTREDISAIT ELLE-MÊME, ET ÇA S'EST VU À L'ÉCRAN.
+   Le commentaire dit « pas sur un aplat de couleur » — et la ligne suivante
+   posait `background: var(--acc-13)`. Or `--acc` (#CDFF4B) n'est pas une
+   couleur d'alarme dans ce design system : c'est la couleur du GESTE. C'est
+   celle du bouton « Démarrer », de l'onglet actif, de « Protéger ». Le renvoi
+   médical, en tête de l'onglet Programme, portait donc le costume de l'action
+   principale, à l'endroit exact où l'action principale devrait être.
+
+   > « Je ne vois pas pourquoi on me dit que je dois soigner mon épaule droite. »
+
+   Il ne se lisait pas comme un avertissement : il se lisait comme la TÂCHE DU
+   JOUR. Un avertissement qui occupe la place du geste devient du bruit — et un
+   avertissement qu'on apprend à ignorer ne protège plus personne.
+
+   ⛔ Ce qui NE change pas : il reste le PREMIER de l'écran (la sécurité passe
+      avant l'objectif, philosophy §3), il garde son liseré d'accent — le seul
+      de l'écran — et sa feuille est intacte. On lui retire l'aplat et le
+      « Pourquoi ? » en couleur de bouton. Il ne crie plus : il signale. */
 .ligne-etat--alerte { border-left-color: var(--text-74); }
 .ligne-etat--critique {
   border-left-color: var(--acc);
-  background: var(--acc-13);
   color: var(--text);
 }
-.ligne-etat--critique .ligne-etat-go { color: var(--acc); }
 
 /* ── L'en-tête du programme ────────────────────────────────────────
    ⛔ Plus de <h1>Ton programme</h1> : « du texte qui explique ce qu'on voit
@@ -1600,3 +1626,97 @@ body.en-seance main { padding-bottom: calc(var(--sc-bar-h) + var(--sp-4)); }
   border: none;
   cursor: pointer;
 }
+
+/* ══════════════════════════════════════════════════════════════════════
+   🏃 LA COURSE — l'autre moitié du sport
+   ══════════════════════════════════════════════════════════════════════
+   L'app faisait la MOITIÉ de son sport : le moteur savait additionner un squat et
+   un 10 km (ADR 0006), et l'écran ne savait recevoir aucune course. Ces règles
+   habillent les trois choses qui referment le trou : le GESTE (loguer), la JAUGE
+   (muscu + course, une seule charge) et le CONFLIT DE PLACEMENT.
+
+   ⚠️ Aucune nouvelle primitive : on réemploie `.carte`, `.champ-inline`,
+   `.rpe-grille`, `.ligne-etat`, `.val`. Un deuxième système de composants serait
+   un deuxième système à maintenir — et il divergerait. */
+
+/* Le geste. Il vit sous les séances de salle, sur l'écran ouvert 6 j/7 : la course
+   n'est pas un module à part, c'est l'autre moitié du même entraînement. */
+.crs-cta {
+  margin-top: var(--sp-3);
+  width: 100%;
+  display: flex; align-items: center; gap: var(--sp-3);
+  min-height: 56px;
+  padding: 0 var(--sp-4);
+  border-radius: var(--r-card);
+  background: var(--fill-6);
+  border: 1px dashed var(--line-12);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+.crs-cta:hover { background: var(--fill-10, var(--fill-6)); border-style: solid; }
+.crs-cta-i { font-size: var(--fs-body); }
+.crs-cta-t { flex: 1; font-size: var(--fs-body); font-weight: 700; }
+.crs-cta-go {
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-size: var(--fs-metric-s);
+  color: var(--acc);
+  font-weight: 700;
+}
+
+/* ── 🔴 LA JAUGE UNIFIÉE ──────────────────────────────────────────────
+   Le chiffre de tête est la SOMME (`total_au`) ; la ligne en dessous est la
+   PREUVE de la somme (`force_au` + `endurance_au`, filières séparées et
+   auditables — ADR 0006). Une jauge qui ne montrerait que le total serait un
+   score : elle ne serait plus auditable, et c'est exactement ce que l'ADR
+   interdit. On additionne la charge ; on n'additionne pas la fatigue. */
+.crs-charge { margin-top: var(--sp-3); }
+.crs-total { display: flex; align-items: baseline; gap: var(--sp-3); }
+.crs-unite {
+  font-size: var(--fs-caption);
+  letter-spacing: var(--ls-caption);
+  text-transform: uppercase;
+  color: var(--text-45);
+  font-weight: 700;
+}
+.crs-split { display: flex; gap: var(--sp-5); }
+.crs-part { font-size: var(--fs-body-s); color: var(--text-55); }
+.crs-part b {
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+.crs-avant { margin: 0; font-size: var(--fs-meta); color: var(--text-40); }
+.crs-avant b { color: var(--text-55); font-family: var(--font-mono); font-weight: 700; }
+/* Le travail que la jauge ne compte PAS. Il reste VISIBLE — sinon il disparaît. */
+.crs-avant--trou b { color: var(--text-74); }
+
+/* ── Le formulaire de course, dans la feuille ─────────────────────────
+   Les mêmes boîtes de saisie que le poids de corps et l'objectif (46 px de
+   hauteur : c'est un doigt). Rien de neuf ; le geste doit avoir la même allure
+   partout. */
+.crs-form { display: flex; flex-direction: column; gap: var(--sp-4); }
+.crs-rpe { display: flex; flex-direction: column; gap: var(--sp-2); }
+/* Le coût du trou, DIT — pas caché : sans RPE, la sortie n'entre pas dans la jauge.
+   Elle entre quand même au carnet : la course est le PRODUIT, le RPE est l'ANNOTATION. */
+.crs-opt { text-transform: none; letter-spacing: 0; color: var(--text-40); font-weight: 600; }
+.crs-rpe .rpe-echelle { margin-bottom: 0; }
+/* ⚠️ Ici — et SEULEMENT ici — un bouton de RPE peut être « coché ». C'est un
+   FORMULAIRE : le tap choisit, il ne valide pas (à la fin d'une séance de muscu,
+   au contraire, le tap EST la déclaration et rien n'est jamais pré-coché).
+   Aucun `aria-pressed="true"` au départ, dans les deux cas. */
+.rpe-btn[aria-pressed='true'] {
+  background: var(--acc);
+  color: var(--acc-ink);
+  border-color: transparent;
+}
+
+/* 🔴 UNE LIGNE MÉTA N'EST PAS UNE LIGNE DE MÉTRIQUE — vu à l'écran, pas dans un test.
+   `.val--der` porte le calibre `--fs-metric-s` : légitime sur un chiffre de tête, ruineux
+   dans une phrase. Sur la carte « Ta dernière séance », « 4 200 kg de tonnage · RPE 9 »
+   cassait entre « RPE » et « 9 » — un label et sa valeur séparés par un retour à la ligne.
+   ⚠️ La TAXONOMIE ne bouge pas : couleur, « ~ » et précision restent. C'est elle qui porte
+   la vérité (mesuré · dérivé · estimé) — pas la taille du glyphe. */
+.sc-derniere-meta .val { font-size: var(--fs-body-s); letter-spacing: 0; }

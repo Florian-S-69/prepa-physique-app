@@ -15,15 +15,39 @@
  */
 
 const DB_NAME = 'prepa-physique';
-const DB_VERSION = 1;
+/**
+ * 🔴 v1 → v2 (2026-07-12) : le magasin `sorties` (les COURSES).
+ *
+ * ⚠️ **Cette migration est ADDITIVE, et ça n'est pas un détail de confort.** `onupgradeneeded`
+ * ci-dessous ne fait que **créer les magasins qui manquent** (`objectStoreNames.contains`) : il
+ * n'ouvre, ne relit et ne réécrit **aucune donnée existante**. `seances`, `mesures` et `meta`
+ * traversent la migration sans être touchés — donc sans pouvoir être perdus.
+ *
+ * C'est la seule forme de migration qu'on s'autorise sur cette base : elle contient des semaines de
+ * RPE **irremplaçables** (il n'y a pas de serveur, il n'y a pas de deuxième copie). Une migration
+ * qui TRANSFORME de la donnée devra, elle, être précédée d'un export automatique — ce n'est pas le
+ * cas ici, et il ne faut pas s'habituer à ce que « migration » veuille dire « sans risque ».
+ */
+const DB_VERSION = 2;
 
 /**
  * Les magasins. `meta` est un clé/valeur générique (profil, état du chrono,
  * date du dernier export). Les autres sont des collections datées.
  * Toute évolution du schéma = DB_VERSION + 1 + une branche dans `onupgradeneeded`.
+ *
+ * 🔴 `sorties` = les COURSES. Un magasin SÉPARÉ de `seances`, et c'est délibéré : une sortie n'a ni
+ * exercices, ni séries, ni RIR — la fourrer dans `seances` avec un champ `type` obligerait chaque
+ * lecteur du carnet (`versEntreeJournal`, le tonnage, la double progression, le bilan) à commencer
+ * par un `if`. Le moteur, lui, les tient déjà séparées : `journal.seances_muscu` et
+ * `journal.sorties_course` sont deux listes, avec deux validateurs (`src/lib/journal.js`). La base
+ * suit le moteur ; elle ne s'invente pas un schéma à elle.
+ *
+ * ⚠️ `backup.js` boucle sur `STORES` : les courses partent dans l'export **sans une ligne de plus**.
+ * Un magasin qu'on ajoute sans l'ajouter à l'export serait un magasin qu'un import RESTAURERAIT VIDE.
  */
 export const STORES = {
   seances: { keyPath: 'id', indexes: [['parDate', 'date']] },
+  sorties: { keyPath: 'id', indexes: [['parDate', 'date']] },
   mesures: { keyPath: 'id', indexes: [['parDate', 'date']] },
   meta: { keyPath: 'cle', indexes: [] },
 };

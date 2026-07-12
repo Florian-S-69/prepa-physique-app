@@ -95,6 +95,24 @@ export function choisirSplit(jours) {
 
 // --- Modèles de séances par split. Le volume est calibré pour tomber dans la
 // --- cible du niveau une fois multiplié par la fréquence hebdo du split.
+//
+// 🔴 `nom` EST UN NOM. `focus` EST UNE DÉFINITION. Ce sont deux champs.
+//
+// Une seule chaîne — `"Push (pectoraux, épaules, triceps)"` — atterrissait sur TROIS des quatre
+// écrans : le titre du protagoniste (où elle passait à la ligne et repoussait « Démarrer » d'un
+// tiers d'écran), l'en-tête de la séance en cours (où elle était **tronquée en plein mot** :
+// « PUSH (PECTORAUX, ÉPAULES, … »), et le titre du programme. Elle portait **5 des 11 parenthèses
+// du dépôt** — et une parenthèse est, par définition, la précision dont l'auteur admet lui-même
+// qu'elle n'est pas dans le fil.
+//
+// **La liste des muscles est une VÉRITÉ. Elle ne se supprime pas : elle change de conteneur.**
+// Elle vit dans `focus`, l'app la rend en sous-titre là où on PLANIFIE (l'onglet Programme), et
+// la tait là où on SOULÈVE (un homme qui tient un haltère sait ce qu'est un Push). Le CLI, lui,
+// la remet entre parenthèses : c'est du Markdown, pas un écran de 390 px.
+//
+// ⚠️ Le code SAVAIT déjà que la parenthèse était un ornement : il l'arrachait avec
+// `nom.split(" (")[0]` à **trois** endroits pour fabriquer les libellés de jour. Trois
+// contournements du même défaut, c'est le défaut qui demande à être corrigé.
 
 function seancesFullBody(nbJours, cat) {
   const seances = [
@@ -148,7 +166,8 @@ function seancesFullBody(nbJours, cat) {
 function seancesUpperLower(cat) {
   return [
     {
-      nom: "Upper A (dominante horizontale)",
+      nom: "Upper A",
+      focus: "dominante horizontale",
       exercices: [
         ex(cat, "push_h_principal", 4, "hypertrophie"),
         ex(cat, "pull_h_principal", 4, "hypertrophie"),
@@ -159,7 +178,8 @@ function seancesUpperLower(cat) {
       ],
     },
     {
-      nom: "Lower A (dominante quadriceps)",
+      nom: "Lower A",
+      focus: "dominante quadriceps",
       exercices: [
         ex(cat, "squat_principal", 4, "hypertrophie"),
         ex(cat, "hinge_principal", 3, "hypertrophie"),
@@ -170,7 +190,8 @@ function seancesUpperLower(cat) {
       ],
     },
     {
-      nom: "Upper B (dominante verticale)",
+      nom: "Upper B",
+      focus: "dominante verticale",
       exercices: [
         ex(cat, "push_v_principal", 3, "hypertrophie"),
         ex(cat, "pull_v_principal", 4, "hypertrophie"),
@@ -182,7 +203,8 @@ function seancesUpperLower(cat) {
       ],
     },
     {
-      nom: "Lower B (dominante chaîne postérieure)",
+      nom: "Lower B",
+      focus: "dominante chaîne postérieure",
       exercices: [
         // Le soulevé de terre CONVENTIONNEL ouvre la séance postérieure (mouvement le plus lourd
         // → en premier, à fraîcheur maximale). Il est délibérément placé sur une AUTRE séance que
@@ -202,7 +224,8 @@ function seancesUpperLower(cat) {
 function seancesPPL(nbJours, cat) {
   const cycle = [
     {
-      nom: "Push (pectoraux, épaules, triceps)",
+      nom: "Push",
+      focus: "pectoraux, épaules, triceps",
       exercices: [
         ex(cat, "push_h_principal", 3, "hypertrophie"),
         ex(cat, "push_v_principal", 2, "hypertrophie"),
@@ -212,7 +235,8 @@ function seancesPPL(nbJours, cat) {
       ],
     },
     {
-      nom: "Pull (dos, biceps)",
+      nom: "Pull",
+      focus: "dos, biceps",
       exercices: [
         ex(cat, "pull_h_principal", 3, "hypertrophie"),
         ex(cat, "pull_v_principal", 3, "hypertrophie"),
@@ -222,7 +246,8 @@ function seancesPPL(nbJours, cat) {
       ],
     },
     {
-      nom: "Legs (quadriceps, ischios, fessiers)",
+      nom: "Legs",
+      focus: "quadriceps, ischios, fessiers",
       exercices: [
         ex(cat, "squat_principal", 3, "hypertrophie"),
         // 2 séries (et non 3) : la séance est répétée ~2×/sem, et le volume INDIRECT des
@@ -327,21 +352,38 @@ export function ratioPushPull(seances) {
   return { push, pull, ratio: +(push / pull).toFixed(2) };
 }
 
-/** Jours conseillés dans la semaine selon le split (répartition de la récupération). */
-function joursConseilles(split, seances, frequence) {
+/**
+ * La semaine conseillée, EN DONNÉES — quand l'utilisateur ne court pas (pas de `placement`).
+ *
+ * Chaque entrée dit **quel jour** porte **quelle séance**, par son INDEX dans `seances`. Le
+ * libellé en est DÉRIVÉ, jamais construit à côté : deux listes bâties en parallèle finissent
+ * toujours par ne plus s'aligner — c'est exactement ce qui est arrivé (voir `semaine`, plus bas).
+ *
+ * ⚠️ Un libellé de jour est une ÉTIQUETTE : un jour, une séance. Ce n'est pas un endroit où
+ * ranger une règle. « (jamais 2 jours consécutifs) » y était recopié sur CHAQUE ligne — le même
+ * fait, dit trois fois, dans un contrôle. La règle vaut pour le SPLIT : elle vit dans
+ * `note_split`, une fois, et l'app la rend derrière un tap.
+ */
+function semaineConseillee(split, seances, frequence) {
+  const entree = (jour, seance) => ({
+    jour,
+    seance,
+    libelle: `${jour} — ${seances[seance].nom}`,
+    course: null,
+    jambes_lourdes: false,
+    course_qualitative: false,
+  });
+
   if (split === "full-body") {
     const jours = ["Lundi", "Mercredi", "Vendredi"];
-    return seances.map((s, i) => `${jours[i] ?? `Jour ${i + 1}`} — ${s.nom} (jamais 2 jours consécutifs)`);
+    return seances.map((_, i) => entree(jours[i] ?? `Jour ${i + 1}`, i));
   }
   if (split === "upper/lower") {
     const jours = ["Lundi", "Mardi", "Jeudi", "Vendredi"];
-    return seances.map((s, i) => `${jours[i]} — ${s.nom.split(" (")[0]}`);
+    return seances.map((_, i) => entree(jours[i], i));
   }
-  const labels = [];
-  for (let r = 0; r < Math.ceil(frequence); r++) {
-    for (const s of seances) labels.push(s.nom.split(" (")[0]);
-  }
-  return labels.slice(0, Math.round(seances.length * frequence)).map((nom, i) => `Jour ${i + 1} — ${nom}`);
+  const n = Math.round(seances.length * frequence);
+  return Array.from({ length: n }, (_, i) => entree(`Jour ${i + 1}`, i % seances.length));
 }
 
 /**
@@ -551,7 +593,7 @@ export function genererProgrammeMuscu(persona, referentiel) {
   if (split === "full-body") {
     seances = seancesFullBody(m.jours_par_semaine, catalogue);
     frequence = 1;
-    note_split = `${m.jours_par_semaine} jours → full-body : chaque muscle travaillé à chaque séance (fréquence ${m.jours_par_semaine}×/sem). Le volume/muscle est mécaniquement plus bas qu'avec plus de jours — normal, la progressivité prime${m.niveau === "debutant" ? " (et largement suffisant pour progresser à ce niveau)" : " ; ajouter un jour pour plus de volume"}.`;
+    note_split = `${m.jours_par_semaine} jours → full-body : chaque muscle travaillé à chaque séance (fréquence ${m.jours_par_semaine}×/sem). **Jamais 2 jours consécutifs** — chaque muscle est sollicité à chaque séance, il lui faut une journée pour récupérer. Le volume/muscle est mécaniquement plus bas qu'avec plus de jours — normal, la progressivité prime${m.niveau === "debutant" ? " (et largement suffisant pour progresser à ce niveau)" : " ; ajouter un jour pour plus de volume"}.`;
   } else if (split === "upper/lower") {
     seances = seancesUpperLower(catalogue);
     frequence = 1;
@@ -608,6 +650,23 @@ export function genererProgrammeMuscu(persona, referentiel) {
           }
         )
       : null;
+
+  // 🔴 LA SEMAINE, EN DONNÉES — la SEULE liste de jours. `jours` (les libellés) en sort par un
+  //    `.map()`, plus bas. Une seule source, donc aucun moyen que les deux se désalignent.
+  const semaine = placement
+    ? placement.jours.map((j) => ({
+        jour: j.jour,
+        // L'INDEX de la séance dans `seances` — le lien qui manquait. `j.muscu` est la MÊME
+        // référence d'objet que `seances[k]` (placement.js pioche dedans), donc `indexOf` est
+        // exact. Un jour de course ou de repos ne porte pas de séance : `null`, et c'est un état
+        // que l'app doit savoir rendre — pas un trou dans lequel elle tombe.
+        seance: j.muscu ? seances.indexOf(j.muscu) : null,
+        course: j.course?.nom ?? null,
+        jambes_lourdes: Boolean(j.jambes_lourdes),
+        course_qualitative: Boolean(j.course_qualitative),
+        libelle: `**${j.jour}** — ${j.muscu ? j.muscu.nom : j.course ? j.course.nom : "Repos"}`,
+      }))
+    : semaineConseillee(split, seances, frequence);
 
   // COURSE — le trou historique. `limitations` n'adaptait QUE la salle : un coureur qui déclarait
   // un genou douloureux voyait ses séances de muscu changer et ses SORTIES rester intactes. Un
@@ -737,14 +796,23 @@ export function genererProgrammeMuscu(persona, referentiel) {
     frequence,
     // Quand l'utilisateur court, la « semaine type » n'est plus une liste abstraite de « Jour N » :
     // c'est un vrai calendrier, ordonné pour respecter la contrainte de placement.
-    jours: placement
-      ? placement.jours.map(
-          (j) =>
-            `**${j.jour}** — ${j.muscu ? j.muscu.nom.split(" (")[0] : j.course ? j.course.nom : "Repos"}` +
-            (j.jambes_lourdes ? " 🦵 _(jambes lourdes)_" : "") +
-            (j.course_qualitative ? " 🏃 _(séance-clé : à protéger)_" : "")
-        )
-      : joursConseilles(split, seances, frequence),
+    //
+    // 🔴 `jours` EST DÉRIVÉ DE `semaine`. Il n'est plus construit à côté.
+    //
+    // `semaine` est un CALENDRIER (7 entrées quand on court) ; `seances` est un CYCLE (3 entrées
+    // en PPL). Les deux n'ont **jamais** eu le même index — mais comme le libellé de jour RECOPIAIT
+    // le nom de la séance, personne ne s'en est aperçu, et l'app indexait `seances[i]` avec
+    // l'indice du JOUR. À l'écran : taper « Jeudi » (ou vendredi, samedi, dimanche) levait un
+    // `TypeError: Cannot read properties of undefined` et **vidait le panneau**. Quatre onglets sur
+    // sept étaient morts, sous 482 tests verts. **Un nom recopié n'est pas un lien.**
+    //
+    // Le libellé, lui, ne porte plus de décor. Il portait « 🦵 _(jambes lourdes)_ », et l'app en
+    // faisait le libellé d'un onglet : « Mercredi » devenait trois fois plus large que les autres
+    // et poussait la fin de la semaine hors de l'écran. **Un contrôle n'est pas une affiche.**
+    // Le fait reste, en donnée (`semaine[i].jambes_lourdes`) : le CLI le remet en Markdown,
+    // l'app le range derrière un tap. Rien ne se perd — tout change de conteneur.
+    jours: semaine.map((j) => j.libelle),
+    semaine,
     placement,
     seances,
     volume_par_muscle: volume,

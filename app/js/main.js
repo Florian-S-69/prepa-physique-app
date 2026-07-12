@@ -303,7 +303,10 @@ async function rendreProfil() {
   const champPoids = $('#champ-poids');
 
   try {
-    const { persona, amorce } = await chargerPersona();
+    // `amorce` (« ce profil vient d'être semé depuis le dépôt ») n'est plus lu : c'était un
+    // détail d'implémentation, vrai un seul chargement sur deux, et le bouton « Recharger le
+    // profil de démo » est à trois centimètres en dessous. Il ne manque à personne.
+    const { persona } = await chargerPersona();
 
     // 🔴 Aucun profil : le cas NORMAL d'une app publiée (le persona de dev n'est
     // pas publié — voir amorce.js). Un utilisateur neuf n'est pas une anomalie :
@@ -329,18 +332,31 @@ async function rendreProfil() {
     const lim = persona.muscu?.limitations ?? [];
     const actives = lim.filter((l) => l.statut === 'ACTIF').length;
 
+    // 🔴 LE PIRE BLOC DE PROSE DE L'APP — 3 phrases, 30 mots, 191 caractères, une parenthèse.
+    //
+    // On y lisait : « 27 ans · 84 kg · avance · 4 limitations déclarées (dont 1 ACTIVE). Ce profil
+    // vient d'être amorcé depuis le dépôt : il est maintenant dans ta base, sur cet appareil.
+    // L'onboarding le remplacera. »
+    //
+    // Sur ces trois phrases, **une seule est un ÉTAT** — la première. Les deux autres sont des
+    // notes de développeur affichées à l'utilisateur : « amorcé depuis le dépôt » nomme un
+    // mécanisme interne, « l'onboarding le remplacera » annonce une ROADMAP. Ni l'une ni l'autre
+    // ne dit quoi que ce soit à quelqu'un qui veut savoir quel profil le moteur consomme.
+    //
+    // ⚠️ La localité des données (« sur cet appareil ») n'est PAS perdue : elle est déjà dite,
+    //    une fois, en bas de cet écran (« aucune donnée ne quitte cet appareil ») et par la carte
+    //    Stockage juste en dessous. Un fait ne se dit qu'une fois à plat.
+    //
+    // ⚠️ La parenthèse « (dont 1 ACTIVE) » disparaît en tant que PARENTHÈSE, pas en tant que
+    //    fait : une limitation ACTIVE est ce qui fait le plus parler le moteur (retraits,
+    //    substitutions, échauffement imposé, renvoi médical). Elle reste, en clair, dans le fil.
     pastille.dataset.etat = 'ok';
     txt.textContent = persona.nom;
+    const limites = lim.length
+      ? `<b>${lim.length} limitation${lim.length > 1 ? 's' : ''}</b>${actives ? ` · <b>${actives} ACTIVE${actives > 1 ? 'S' : ''}</b>` : ''}`
+      : 'aucune limitation';
     note.innerHTML =
-      `${persona.profil.age} ans · ${persona.profil.poids_kg} kg · ${persona.muscu.niveau} · ` +
-      `<b>${lim.length} limitation${lim.length > 1 ? 's' : ''} déclarée${lim.length > 1 ? 's' : ''}</b>` +
-      `${actives ? ` (dont <b>${actives} ACTIVE${actives > 1 ? 'S' : ''}</b>)` : ''}.<br>` +
-      (amorce
-        ? "Ce profil vient d'être <b>amorcé depuis le dépôt</b> : il est maintenant dans ta base, sur cet appareil. "
-        : 'Ce profil est lu <b>dans ta base</b>, sur cet appareil. ') +
-      // « — le moteur, lui, ne changera pas » rassurait sur une implémentation. Ça ne dit
-      // rien à qui utilise l'app : c'est une note de développeur affichée à l'utilisateur.
-      "L'onboarding le remplacera.";
+      `${persona.profil.age} ans · ${persona.profil.poids_kg} kg · ${persona.muscu.niveau} · ${limites}`;
   } catch (e) {
     // Là, en revanche, quelque chose a VRAIMENT échoué (base illisible, persona
     // corrompu). On le dit comme une erreur, parce que c'en est une.
@@ -361,10 +377,11 @@ async function rendreQuota() {
   $('#quota-sur').textContent = `sur ${formaterOctets(est.quota)} disponibles`;
   $('#quota-jauge').style.width = `${Math.max(0.5, Math.min(100, est.pct))}%`;
   const pct = est.pct.toFixed(est.pct < 1 ? 2 : 0).replace('.', ',');
+  // La jauge, le « X sur Y disponibles » et ce pourcentage disaient TROIS FOIS la même chose,
+  // et la deuxième phrase (« une séance pèse 1 à 3 Ko ») rassurait sur un problème que personne
+  // n'avait. Sous la barre : le chiffre, et rien. Au-dessus de 50 % : ce qu'il faut FAIRE.
   $('#note-quota').textContent =
-    est.pct < 50
-      ? `Tu utilises ${pct} % de ton quota. Une séance de muscu pèse 1 à 3 Ko : la place n'est pas un problème.`
-      : `Tu utilises ${pct} % de ton quota. Pense à exporter et faire du ménage.`;
+    est.pct < 50 ? `${pct} % utilisés.` : `${pct} % utilisés — exporte et fais du ménage.`;
 }
 
 // ══════════════════════════════════════════════════════════════════════
@@ -375,13 +392,15 @@ async function rendreSauvegarde() {
   const etat = await etatSauvegarde();
   const txt = $('#txt-sauvegarde');
   txt.textContent = libelleSauvegarde(etat);
-  if (etat.date) txt.textContent += ` (${formaterDate(etat.date)})`;
+  // La date exacte était une PARENTHÈSE — « il y a 23 jours (19 juin) ». Même fait, deux fois,
+  // et la seconde entre parenthèses. Elle reste : elle prend un séparateur, pas une aside.
+  if (etat.date) txt.textContent += ` · ${formaterDate(etat.date)}`;
 
   if (etat.aRappeler && !etat.jamais) {
     banniere(
       'sauvegarde',
       'info',
-      `<b>${libelleSauvegarde(etat)}</b> Un export prend 3 secondes.`,
+      `<b>${libelleSauvegarde(etat)}</b> — un export prend 3 secondes`,
       'Exporter',
       () => {
         naviguer('donnees'); // idem : le retour doit ramener au programme
@@ -817,10 +836,9 @@ async function demarrer() {
     .catch(() => initSeance(null)); // l'erreur est déjà rendue dans l'écran (programme.js)
 
   await Promise.all([rendreStockage(), rendreQuota(), rendreSauvegarde(), rendreProfil(), rendreCible()]);
-
-  if ((await etatSauvegarde()).jamais) {
-    $('#txt-sauvegarde').textContent = `Tu n'as jamais exporté tes données. Fais-le au moins tous les ${SEUIL_RAPPEL_JOURS} jours.`;
-  }
+  // ⛔ Ici, `demarrer()` RÉÉCRIVAIT `#txt-sauvegarde` par-dessus `rendreSauvegarde()` — avec une
+  //    version à deux phrases. Deux endroits écrivaient le même élément, et c'est le second qui
+  //    gagnait : la cadence vit désormais dans `libelleSauvegarde`, à un seul endroit.
 }
 
 demarrer();

@@ -53,7 +53,10 @@ export function estimerVdot(distance_m, temps) {
 // tables de Daniels, que le corpus **n'a pas transcrites**. Les valeurs sont réelles, la CITATION
 // était trop large. On ne les invente pas — on dit d'où elles viennent, et on demande à la veille
 // de transcrire les tables (remonté dans « POUR LE PROPRIÉTAIRE »).
-const ZONES = [
+// ⚠️ EXPORTÉE depuis le 2026-07-12 : l'app doit nommer les zones quand on logue une course
+// (le journal n'accepte que E/M/T/I/R — `journal.js TYPES_SORTIE`). Une deuxième table de
+// libellés dans `app/` serait une table qui divergera (philosophy §11).
+export const ZONES = [
   { code: "E", nom: "Endurance fondamentale", basse: 0.65, haute: 0.74 },
   { code: "M", nom: "Allure marathon", basse: 0.8, haute: 0.84 },
   { code: "T", nom: "Seuil (tempo)", basse: 0.88, haute: 0.92 },
