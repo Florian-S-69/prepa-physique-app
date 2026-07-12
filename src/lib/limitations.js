@@ -338,7 +338,7 @@ export const REGLES = {
         // « charge lombaire lourde » au même titre que le soulevé de terre serait une **affirmation
         // de taxonomie** que la veille ne tranche pas. → Je ne fabrique rien : je substitue vers la
         // variante **haltères** (charge tenue aux côtés, pas de bras de levier postérieur à contrer),
-        // et je REMONTE la question ouverte au propriétaire du produit plutôt que d'y répondre tout seul.
+        // et je REMONTE la question ouverte au propriétaire plutôt que d'y répondre tout seul.
         squat_unilateral: {
           candidats: ["Dumbbell_Lunges", "Split_Squat_with_Dumbbells", "Bodyweight_Walking_Lunge"],
           pourquoi:
@@ -607,7 +607,7 @@ export const REGLES_COURSE = {
   },
 
   // ─────────────────────────────────────────────────────────────────────────── LE GENOU
-  // La zone-phare, et le cas de référence du projet. Tendinopathie rotulienne + objectif TRAIL = dénivelé =
+  // La zone-phare, et le cas du propriétaire. Tendinopathie rotulienne + objectif TRAIL = dénivelé =
   // DESCENTE = excentrique. C'est exactement le scénario où le trou mordait.
   genou: {
     libelle: "genou",
@@ -1059,10 +1059,23 @@ export function hypotheseClinique(progression, limitationsActives) {
 // prudente, pas une mesure. Prescrire du lourd à RIR 0–2 sur une charge qu'on n'a pas mesurée,
 // c'est prescrire dans le vide. Le moteur ne le fait pas en silence : il relève le RIR sur ces
 // exercices et impose une séance de re-test avant de les charger.
+//
+// 🔴 CE RELÈVEMENT-LÀ ÉTAIT MUET — ET IL FAISAIT MENTIR LE MOTEUR (2026-07-12).
+// Il s'applique APRÈS le plancher des limitations, et il n'écrivait RIEN dans `rir_ajustes`.
+// L'exercice partait donc avec un RIR (« 3–4 ») que le rapport ne mentionnait nulle part, tandis
+// que `rir_ajustes` continuait d'annoncer l'étape d'AVANT (« relevé de 0–2 à 2–3 ») comme si
+// c'était le point d'arrivée. L'app affichait les deux — la puce et la feuille — **à un tap
+// d'écart**. Ce n'était pas un défaut de rendu : le moteur se contredisait lui-même.
+//
+// La valeur finale (le plus haut plancher gagne) était JUSTE. C'est la TRAÇABILITÉ qui manquait.
+// L'invariant, désormais tenu et testé : **pour tout exercice, le dernier `apres` de sa chaîne
+// de `rir_ajustes` est le RIR qu'il porte.** Un chiffre affiché sans son pourquoi est un chiffre
+// « au pif » — c'est exactement ce que le produit refuse d'être.
 export function chargesNonMesurees(seances, aTester, referentiel) {
   const reconnues = [];
   const non_reconnues = [];
-  if (!aTester?.length) return { exercices: [], non_reconnues };
+  const rir_ajustes = [];
+  if (!aTester?.length) return { exercices: [], non_reconnues, rir_ajustes };
 
   const nomsConnus = referentiel?.noms ?? [];
   for (const ligne of aTester) {
@@ -1086,11 +1099,28 @@ export function chargesNonMesurees(seances, aTester, referentiel) {
       if (!r) continue;
       e.charge_a_confirmer = true;
       // Pas de lourd à quasi-échec sur une charge non mesurée : plancher RIR 3 le temps du re-test.
-      e.rir = plancherRir(e.rir, 3);
+      const avant = e.rir;
+      e.rir = plancherRir(avant, 3);
+      // Le relèvement se DÉCLARE, exercice par exercice, avec son pourquoi. Sans ça, la puce
+      // affiche un RIR que rien n'explique — et la feuille en explique un autre.
+      if (e.rir !== avant && !rir_ajustes.some((x) => x.exercice === e.nom)) {
+        rir_ajustes.push({
+          zone: null,
+          motif: "charge_non_mesuree",
+          exercice: e.nom,
+          avant,
+          apres: e.rir,
+          pourquoi:
+            `la charge de départ de « ${r.nom} » est une **estimation**, pas une mesure — ton profil ` +
+            `la déclare **à re-tester**. Chercher le quasi-échec sur une charge que personne n'a ` +
+            `vérifiée, c'est prescrire dans le vide : le moteur **recule de l'échec** le temps d'une ` +
+            `séance de re-test, puis il repart de ce que tu auras **réellement soulevé**.`,
+        });
+      }
       if (!touches.includes(e.nom)) touches.push(e.nom);
     }
   }
-  return { exercices: touches, non_reconnues };
+  return { exercices: touches, non_reconnues, rir_ajustes };
 }
 
 // --- Cœur : appliquer les limitations à un programme ------------------------------------------
@@ -1402,8 +1432,12 @@ export function appliquerLimitations(seances, persona, referentiel) {
   const hypothese = hypotheseClinique(persona.progression, actives);
 
   // 5) Charges estimées et non mesurées.
+  // ⚠️ Ce relèvement s'applique APRÈS les planchers de limitation, et il peut donc remonter
+  // encore le RIR d'un exercice déjà relevé. Ses ajustements REJOIGNENT `rir_ajustes` : c'est
+  // ce qui garantit que la chaîne rapportée FINIT sur le RIR que l'exercice porte vraiment.
   const nonMesurees = chargesNonMesurees(seances, m.charges_actuelles_a_tester, referentiel);
   for (const nr of nonMesurees.non_reconnues) alertes.push(nr.message);
+  rir_ajustes.push(...nonMesurees.rir_ajustes);
 
   return {
     limitations: traitees,
@@ -1456,7 +1490,7 @@ export function zoneJambesActive(limitationsValides) {
   return null;
 }
 
-/** Le persona court-il ? (plan running, ou course déclarée côté hybride — le cas muscu-first qui court.) */
+/** Le persona court-il ? (plan running, ou course déclarée côté hybride — le cas du propriétaire.) */
 export function personaCourt(persona) {
   if (persona?.running?.objectif?.distance) return true;
   return Number(persona?.muscu?.hybride?.course_par_semaine ?? 0) > 0;

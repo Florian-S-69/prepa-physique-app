@@ -14,10 +14,14 @@ import { chargeEndurance, simulerCharge, chargesHebdo, verifierProprietaireJourn
 import { observanceEchauffement } from "./echauffement.js";
 import { conflitsObserves } from "./placement.js";
 import { genererPlanRunning } from "./running.js";
+import { genererProgrammeMuscu } from "./muscu.js";
 import { normaliserPersona, limitationsDe } from "./personne.js";
 import { validerLimitations, zoneJambesActive } from "./limitations.js";
 import { MUSCLES_ACCESSOIRES } from "./exercices.js";
 import { SEUIL_PERTE_HEBDO_PCT } from "./red-s.js";
+// Les records se DÉRIVENT du carnet ; la cible se LIT contre eux. Aucun des deux ne se saisit.
+import { recordsMuscu } from "./records.js";
+import { evaluerCible } from "./objectif.js";
 
 // Le lien « nom d'exercice loggué → muscle moteur principal » vient du RÉFÉRENTIEL
 // (free-exercise-db, exercices.js) : le journal ne loggue qu'un nom, pas un muscle.
@@ -71,8 +75,34 @@ function tonnage(entree) {
 // ---------------------------------------------------------------- muscu
 
 /**
+ * Le PAS de charge d'un exercice — ce que vaut « l'étape suivante » de la double
+ * progression. Ajouter 5 kg à un curl, c'est une hausse que personne ne tient ;
+ * ajouter 2,5 kg à un squat, c'est ne jamais progresser. Le mouvement décide.
+ * (La règle vivait en ligne dans la phrase de la décision — elle porte maintenant
+ * aussi la VALEUR, et une seule définition les alimente toutes les deux.)
+ */
+const RE_PETIT_PAS = /couché|militaire|rowing|tractions|dips|incliné|curl|extension|élévations/i;
+const pasDeProgression = (nom) => (RE_PETIT_PAS.test(nom) ? 2.5 : 5);
+
+/**
+ * La baisse de charge quand la série est tombée sous la fourchette à RIR 0 : ~5 %,
+ * mais **ramenée sur la grille de la salle** (on ne descend pas de 4,37 kg).
+ */
+function reductionKg(charge, pas) {
+  if (!(charge > 0)) return 0;
+  return -Math.max(pas, Math.round((charge * 0.05) / pas) * pas);
+}
+
+/**
  * Applique la double progression exercice par exercice (veille/02 §4) et détecte
  * les signaux de deload (veille/02 §7 : perf en baisse, RPE anormalement haut).
+ *
+ * 🔴 **Chaque décision porte une VALEUR, pas seulement une phrase** (`delta_kg`,
+ * `reps_cible`). Elle rendait `action: "+2,5 kg, repartir à 8 reps"` — une phrase que
+ * **personne n'appliquait** : la boucle était *conseillée*, jamais *fermée*. Le texte
+ * reste (il s'affiche, il s'imprime dans le bilan CLI) ; la donnée apparaît à côté, et
+ * c'est elle qu'`appliquerAdaptationMuscu` verse dans le programme.
+ * On sépare la donnée du texte — on ne supprime pas le texte (cf. `avis.js`).
  */
 export function adapterMuscu(programme, journal, referentiel) {
   const seances = journal.seances_muscu ?? [];
@@ -104,22 +134,33 @@ export function adapterMuscu(programme, journal, referentiel) {
     const rirOk = dernier.rir == null || dernier.rir >= 1;
     const hautAtteint = dernier.reps.every((r) => r >= fourchette.max) && rirOk;
     const sousFourchette = dernier.reps.some((r) => r < fourchette.min);
+    const pas = pasDeProgression(nom);
     if (hautAtteint) {
       decisions.push({
         exercice: nom,
-        action: `+${/couché|militaire|rowing|tractions|dips|incliné|curl|extension|élévations/i.test(nom) ? "2,5" : "5"} kg, repartir à ${fourchette.min} reps`,
+        action: `+${pas === 2.5 ? "2,5" : "5"} kg, repartir à ${fourchette.min} reps`,
+        // LA DONNÉE — celle que quelqu'un peut enfin APPLIQUER.
+        delta_kg: pas,
+        reps_cible: fourchette.min,
         pourquoi: `Haut de fourchette (${fourchette.max}) atteint sur toutes les séries à RIR cible → étape suivante de la double progression (veille/02 §4).`,
       });
     } else if (sousFourchette) {
+      const tropLourd = dernier.rir === 0;
       decisions.push({
         exercice: nom,
-        action: dernier.rir === 0 ? "Réduire la charge de ~5 % et revenir dans la fourchette" : "Garder la charge, consolider les reps",
-        pourquoi: `Série(s) sous le bas de fourchette (${fourchette.min})${dernier.rir === 0 ? " avec RIR 0 : la charge est trop lourde pour la plage cible" : ""} (veille/02 §3–4).`,
+        action: tropLourd ? "Réduire la charge de ~5 % et revenir dans la fourchette" : "Garder la charge, consolider les reps",
+        delta_kg: tropLourd ? reductionKg(dernier.charge_kg, pas) : 0,
+        reps_cible: fourchette.min,
+        pourquoi: `Série(s) sous le bas de fourchette (${fourchette.min})${tropLourd ? " avec RIR 0 : la charge est trop lourde pour la plage cible" : ""} (veille/02 §3–4).`,
       });
     } else {
       decisions.push({
         exercice: nom,
         action: "Garder la charge, viser +1 rep sur les séries les plus basses",
+        delta_kg: 0,
+        // +1 rep sur la série la plus BASSE, sans dépasser le haut de fourchette :
+        // la charge ne monte qu'une fois le haut tenu partout.
+        reps_cible: Math.min(fourchette.max, Math.min(...dernier.reps) + 1),
         pourquoi: "Dans la fourchette, haut pas encore atteint → on monte les reps avant la charge (double progression, veille/02 §4).",
       });
     }
@@ -143,11 +184,141 @@ export function adapterMuscu(programme, journal, referentiel) {
     deload: {
       declenche: deload,
       signaux: { exercices_en_baisse: perfEnBaisse, seances_rpe_9_plus: rpeEleves },
+      // 🔴 « prochain deload au calendrier » : c'est ce que disait cette ligne — en citant
+      // `veille/02 §5`, la section qui écrit noir sur blanc que **le deload calendaire n'est
+      // pas démontré**. Il n'y a PAS de « prochain deload au calendrier » : il n'y a pas de
+      // calendrier. Sans signal, on continue — point. C'est tout ce que la source autorise.
       pourquoi: deload
-        ? "Perf en baisse et/ou RPE anormalement haut à charge égale = marqueurs de fatigue → deload maintenant plutôt qu'au calendrier (volume −50 %, RIR 3–4, charges −10 %) (veille/02 §5 & §7)."
-        : "Pas de marqueur de fatigue net : on continue, prochain deload au calendrier (veille/02 §5).",
+        ? "Perf en baisse et/ou RPE anormalement haut à charge égale = marqueurs de fatigue → deload (volume −50 %, RIR 3–4, charges −10 %) (veille/02 §5 & §7)."
+        : "Pas de marqueur de fatigue : on continue. Le deload se déclenche sur SIGNAUX, pas à une échéance (veille/02 §5 & §7).",
     },
   };
+}
+
+/**
+ * 🔁 **LA DOUBLE PROGRESSION, REFERMÉE.** `adapterMuscu` DÉCIDE ; ici on APPLIQUE.
+ *
+ * Sans cette fonction, la génération repartait de la **dernière charge réelle**
+ * (`charges_reference`, via `recalerPersona`) — donc **de la charge d'hier, jamais de la
+ * charge d'après**. Le « +2,5 kg » restait une phrase dans un tableau : la semaine suivante
+ * prescrivait exactement la même chose que la semaine passée.
+ *
+ * Ce qui est écrit sur chaque exercice du programme :
+ *   `charge_prevue_kg`  la charge de la PROCHAINE séance = dernière charge réelle + `delta_kg`
+ *   `reps_prevues`      les reps à viser (bas de fourchette après une hausse, +1 sinon)
+ *   `progression`       la décision qui l'a produite (delta, reps, action, pourquoi) — traçable
+ *
+ * ⚠️ On n'écrase **pas** `charge_depart_kg` : il reste ce qu'il est, la dernière charge
+ * **soulevée**. « Prévu » et « précédent » sont deux faits différents, et l'écran les montre
+ * tous les deux.
+ *
+ * @param {object} programme   sortie de `genererProgrammeMuscu` — MUTÉ en place
+ * @param {object} adaptation  sortie d'`adapterMuscu` (peut être `null` : journal vide)
+ */
+export function appliquerAdaptationMuscu(programme, adaptation) {
+  const appliquees = [];
+  if (!programme?.seances || !adaptation?.decisions?.length) return { appliquees };
+
+  const parNom = new Map(adaptation.decisions.map((d) => [d.exercice, d]));
+  for (const seance of programme.seances) {
+    for (const e of seance.exercices) {
+      const d = parNom.get(e.nom);
+      if (!d) continue;
+
+      // La base, c'est le RÉEL : `charge_depart_kg` vient de `charges_reference`, que
+      // `recalerPersona` a rempli depuis le journal. Sans base, pas de prévision — on
+      // n'invente pas une charge de départ pour pouvoir lui ajouter 2,5 kg.
+      const base = e.charge_depart_kg ?? null;
+      let charge = null;
+      if (base != null) {
+        charge = Math.max(0, Math.round((base + (d.delta_kg ?? 0)) * 100) / 100);
+        // 🔒 Un exercice PLAFONNÉ par une limitation ne monte pas en charge, jamais :
+        // il progresse par les reps. La double progression ne perce pas un garde-fou.
+        if (e.plafond_charge && e.charge_max_kg != null) charge = Math.min(charge, e.charge_max_kg);
+      }
+
+      e.charge_prevue_kg = charge;
+      e.reps_prevues = d.reps_cible ?? null;
+      e.progression = {
+        delta_kg: d.delta_kg ?? 0,
+        reps_cible: d.reps_cible ?? null,
+        action: d.action,
+        pourquoi: d.pourquoi,
+      };
+      // Une charge dérivée d'une charge RÉELLEMENT soulevée n'est plus une estimation du
+      // moteur : le marqueur tombe, sinon l'app peindrait un mesuré en « ~85 kg » (elle
+      // arrondit les estimés à 5 kg) — une fausse imprécision, aussi fausse que l'inverse.
+      if (charge != null) e.charge_a_confirmer = false;
+
+      appliquees.push({
+        nom: e.nom,
+        seance: seance.nom,
+        avant: base,
+        apres: charge,
+        delta_kg: d.delta_kg ?? 0,
+        reps_cible: d.reps_cible ?? null,
+      });
+    }
+  }
+  return { appliquees };
+}
+
+/**
+ * 🔴 **LA BOUCLE ENTIÈRE, EN UNE FONCTION PURE** — celle que l'app appelle, et celle que les
+ * tests exercent. Elle n'existait nulle part : chaque maillon était écrit, testé, publié… et
+ * **aucun appelant ne les enchaînait**. Les séances partaient dans un tiroir que personne
+ * n'ouvrait, et le programme se régénérait à l'identique à chaque démarrage.
+ *
+ *   journal → `recalerPersona`  les charges RÉELLES remontent dans `charges_reference`
+ *           → `genererProgrammeMuscu`  le programme repart du réel, pas de l'hypothèse
+ *           → `adapterMuscu`           les décisions de double progression
+ *           → `appliquerAdaptationMuscu`  et **quelqu'un applique enfin le +2,5 kg**
+ *           → `chargesHebdo`           la jauge unifiée sRPE (ADR 0006)
+ *
+ * Aucune I/O : l'appelant lit le persona et le journal où ils vivent (IndexedDB dans l'app,
+ * des fichiers dans le CLI) et les passe ici.
+ *
+ * @param {object} personaBrut  le persona tel qu'il est stocké (non normalisé)
+ * @param {object} journal      journal dérivé des séances loguées (`journal.js`)
+ * @param {object} referentiel  référentiel d'exercices
+ */
+export function programmeAdapteMuscu(personaBrut, journal, referentiel) {
+  // 1. Le persona se recale sur le réel. C'est CE geste qui fait que la semaine prochaine
+  //    ne sera pas identique à cette semaine. `recalerPersona` est PURE : rien n'est écrit.
+  const recalage = recalerPersona(personaBrut, journal, referentiel);
+  const brut = recalage.statut === "ok" ? recalage.persona : personaBrut;
+  const persona = normaliserPersona(brut);
+
+  // 2. Le programme, généré SUR les charges réelles.
+  const programme = genererProgrammeMuscu(persona, referentiel);
+
+  // 3. Les décisions… et leur APPLICATION (c'était le maillon manquant).
+  const adaptation = adapterMuscu(programme, journal, referentiel);
+  const progression = appliquerAdaptationMuscu(programme, adaptation);
+
+  // 4. La jauge unifiée sRPE — muscu et course dans la même unité (ADR 0006).
+  const aDesSeances = (journal?.seances_muscu?.length ?? 0) + (journal?.sorties_course?.length ?? 0) > 0;
+  const charge = aDesSeances
+    ? chargesHebdo(journal, {
+        dureeDefautMuscu: persona.muscu?.duree_seance_min ?? null,
+        pour: persona.id ?? persona.nom ?? null,
+      })
+    : null;
+
+  // 5. 🔴 LES RECORDS ET LA CIBLE — et c'est ICI que le bug ne se reproduit pas.
+  //
+  //    Ce projet a écrit **deux fois** un maillon que personne n'appelait : `versEntreeJournal()`
+  //    (testée, importée, jamais appelée) puis la séance finie qui n'entrait au carnet que par le
+  //    pavé de note. **Ajouter un champ « cible » que le moteur ne LIT pas serait le troisième.**
+  //
+  //    Alors la cible est lue **ici**, dans la fonction que l'app appelle à chaque génération, à
+  //    côté du programme et des limitations dont elle a besoin pour pouvoir REFUSER. Les records,
+  //    eux, sortent du **journal** — et de lui seul (`records.js` : `records_historiques` est en
+  //    quarantaine, et sa signature l'y maintient).
+  const records = recordsMuscu(journal);
+  const cible = evaluerCible(persona, journal, programme);
+
+  return { persona, brut, programme, adaptation, progression, charge, recalage, records, cible };
 }
 
 // ---------------------------------------------------------------- running

@@ -25,9 +25,12 @@
 
 <!-- Polices AUTO-HÉBERGÉES : l'app doit s'ouvrir hors ligne (cf. fonts/fonts.css). -->
 <link rel="stylesheet" href="./fonts/fonts.css">
-<!-- Le design system, point de vérité unique. On le réutilise, on ne le duplique pas. -->
+<!-- Le design system, point de vérité unique. On le réutilise, on ne le duplique pas.
+     `motion.css` porte le retour de press et les transitions de la feuille
+     (pilotées par `data-state`, posé par sheet.js). -->
 <link rel="stylesheet" href="../design/tokens.css">
 <link rel="stylesheet" href="../design/states.css">
+<link rel="stylesheet" href="../design/motion.css">
 <link rel="stylesheet" href="./app.css">
 </head>
 <body>
@@ -114,72 +117,114 @@
   <main id="vue">
     <div id="bannieres" class="bannieres"></div>
 
+    <!-- ══════════════════════════════════════════════════════════════════
+         ÉCRAN SÉANCE — LE GESTE CENTRAL (6×/semaine).
+         C'est ici qu'on ENTRE ses charges, qu'on valide ses séries, qu'on
+         lance son repos et qu'on note son RPE. Un écran, pas un article :
+         UN exercice à la fois, et la cible du geste (la barre d'action) ne
+         bouge JAMAIS.
+         Tout est construit par js/ecran-seance.js — aucune donnée en dur.
+         ══════════════════════════════════════════════════════════════════ -->
+    <section data-ecran="seance" hidden>
+      <p class="sr-only" id="sc-annonce" aria-live="polite"></p>
+
+      <!-- Pas de séance en cours : on choisit son jour. -->
+      <div id="sc-accueil"></div>
+
+      <!-- Séance en cours -->
+      <div id="sc-vue" hidden>
+        <!-- En-tête COLLANT : le nom, le temps, la progression en SÉRIES.
+             Jamais dans le flux qui défile. -->
+        <div class="sc-top">
+          <div class="sc-head">
+            <!-- 🔴 LA SORTIE. La barre d'onglets est masquée pendant la séance — le bas
+                 de l'écran appartient à l'action. Il l'a accepté À UNE CONDITION, ses
+                 mots : « tant que c'est bien clair dans l'écran qu'on peut en sortir ».
+                 Un « × » nu est une CONVENTION, pas une phrase. On écrit le mot. -->
+            <button class="sc-icone sc-sortie" type="button" id="sc-quitter" aria-label="Quitter la séance">
+              <span aria-hidden="true">×</span><span class="sc-sortie-mot">Quitter</span>
+            </button>
+            <div class="sc-centre">
+              <div class="sc-nom-seance" id="sc-nom-seance"></div>
+              <!-- DÉRIVÉ (exact) : le temps de séance. Donc pas d'accent. -->
+              <div class="sc-ecoule" id="sc-ecoule" aria-label="Temps de séance">0:00</div>
+            </div>
+            <button class="sc-icone" type="button" id="sc-reglages" aria-label="Réglages de la séance">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.8"/>
+                <path d="M12 2.6v2.2M12 19.2v2.2M21.4 12h-2.2M4.8 12H2.6M18.6 5.4l-1.6 1.6M7 17l-1.6 1.6M18.6 18.6 17 17M7 7 5.4 5.4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+              </svg>
+            </button>
+          </div>
+
+          <div class="sc-prog">
+            <div class="sc-prog-ligne">
+              <span class="sc-prog-lab"><span class="sc-n" id="sc-faites">0</span> / <span class="sc-n" id="sc-total">0</span> séries</span>
+              <!-- ESTIMÉ : le « ~ » et l'interdiction d'accent sont posés par la CSS,
+                   l'arrondi grossier (5 min) par le JS. On ne prétend pas savoir. -->
+              <span class="sc-eta" id="sc-eta-bloc">reste <span class="val val--est" id="sc-eta">—</span></span>
+            </div>
+            <div class="sc-prog-bar" aria-hidden="true"><div class="sc-prog-fill" id="sc-jauge" style="width:0%"></div></div>
+          </div>
+        </div>
+
+        <div class="sc-flow">
+          <!-- Ce qui est FAIT se replie -->
+          <div id="sc-passes"></div>
+
+          <!-- L'exercice COURANT, en grand -->
+          <section class="sc-bloc" id="sc-bloc">
+            <div class="sc-bloc-head">
+              <h1 class="sc-exo" id="sc-exo"></h1>
+              <button class="sc-icone" type="button" id="sc-menu" aria-label="Options de l'exercice">···</button>
+            </div>
+            <div class="sc-meta" id="sc-meta"></div>
+            <p class="sc-consigne" id="sc-consigne" hidden></p>
+
+            <div id="sc-series"></div>
+            <div class="sc-add">
+              <button class="sc-ghost" type="button" id="sc-plus-serie">+ une série</button>
+              <button class="sc-ghost" type="button" id="sc-moins-serie">− une série</button>
+            </div>
+          </section>
+
+          <!-- « Qu'on sache ce qui arrive » -->
+          <div id="sc-avenir"></div>
+
+          <!-- Séance finie : le bilan. Que du MESURÉ et du DÉRIVÉ. -->
+          <div class="sc-bilan" id="sc-bilan" hidden></div>
+        </div>
+      </div>
+    </section>
+
     <!-- ── Écran PROGRAMME — le moteur tourne ICI, dans le navigateur ──────
          Le persona sort d'IndexedDB, `src/lib/muscu.js` calcule, et les
          adaptations liées aux limitations sont rendues EN HAUT, pas enterrées.
          Tout est construit par js/programme.js : ce conteneur est vide à dessein
          (aucune donnée en dur — un chiffre écrit ici serait un chiffre qui ment).
          ─────────────────────────────────────────────────────────────────── -->
-    <section data-ecran="seance" hidden>
-      <h1 class="ecran-titre">Ton programme</h1>
+    <!-- ⛔ PAS DE <h1>Ton programme</h1>. « Du texte qui explique ce qu'on voit déjà » est
+         le premier signe de la pâte IA : un titre posé au-dessus du programme pour
+         annoncer que c'est le programme. Le split (« Push/Pull/Legs ») est rendu par
+         js/programme.js — LUI dit quelque chose, et il vient du moteur. -->
+    <section data-ecran="programme" hidden>
       <div id="prog-etat" hidden></div>
       <div id="prog" hidden></div>
     </section>
 
-    <!-- ── Écran CHRONO — chrono de repos, par timestamps ─────────────────── -->
-    <section data-ecran="chrono" hidden>
-      <h1 class="ecran-titre">Repos</h1>
-
-      <div class="carte chrono-carte">
-        <div class="chrono-affichage" id="chrono-affichage" aria-live="off">
-          <span class="chrono-valeur" id="chrono-valeur">0:00</span>
-          <span class="chrono-etat" id="chrono-etat">Choisis une durée</span>
-        </div>
-
-        <div class="chrono-jauge" aria-hidden="true">
-          <div class="chrono-jauge-fill" id="chrono-jauge-fill" style="width:0%"></div>
-        </div>
-
-        <!-- L'annonce lecteur d'écran est séparée de l'affichage : on n'annonce pas
-             chaque seconde, seulement les changements d'état. -->
-        <p class="sr-only" id="chrono-annonce" aria-live="polite"></p>
-
-        <div class="chrono-presets" id="chrono-presets" role="group" aria-label="Durée du repos">
-          <button class="chrono-preset" data-duree="60">1:00</button>
-          <button class="chrono-preset" data-duree="90">1:30</button>
-          <button class="chrono-preset" data-duree="120">2:00</button>
-          <button class="chrono-preset" data-duree="180">3:00</button>
-          <button class="chrono-preset" data-duree="300">5:00</button>
-        </div>
-
-        <div class="chrono-controles" id="chrono-controles" hidden>
-          <button class="chrono-ctrl" data-ajuste="-30">−30 s</button>
-          <button class="chrono-ctrl" data-ajuste="30">+30 s</button>
-          <button class="chrono-ctrl chrono-ctrl--stop" id="btn-stop-chrono">Arrêter</button>
-        </div>
-      </div>
-
-      <!-- 🔴 Honnêteté produit : on ne promet PAS de bip écran éteint.
-           Aucune notification locale programmée n'existe sans serveur — NI SUR IOS, NI SUR
-           ANDROID. iOS ne l'a jamais eue ; Google a ABANDONNÉ son API `TimestampTrigger`
-           (motif officiel : impossible de garantir une expérience fiable entre plateformes).
-           ⚠️ Ce texte disait « c'est une limite d'iOS ». Un utilisateur Android lisait donc,
-           sur un téléphone qui n'est pas un iPhone, une excuse qui ne le concernait pas —
-           et pouvait conclure que l'app n'était pas faite pour lui. Une seule règle, honnête,
-           vraie pour les deux. -->
-      <div class="banner" id="banner-chrono-honnete">
-        <span class="banner-icon" aria-hidden="true">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-            <circle cx="12" cy="12" r="9"/><path d="M12 8h.01M11 12h1v4h1"/>
-          </svg>
-        </span>
-        <span id="txt-chrono-honnete">
-          <b>Garde l'app ouverte pendant le repos.</b> Le chrono reste juste même si tu quittes
-          l'app, mais <b>il ne sonnera pas</b> écran éteint. Aucun navigateur de téléphone ne
-          sait le faire sans serveur — <b>ni iPhone, ni Android</b>. Ce n'est pas un réglage.
-        </span>
-      </div>
-    </section>
+    <!-- ⛔ L'ONGLET « REPOS » N'EXISTE PLUS (décision du propriétaire, 2026-07-12).
+         « S'il y a déjà un chrono pour exécuter les exercices, l'onglet repos ne sert
+         plus à rien. On peut le dégager. »
+         ⚠️ Ce commentaire est PUBLIÉ : il ne nomme personne. Le garde-fou (R3) a
+         attrapé une première version qui citait un prénom — un commentaire servi
+         est public, exactement comme le reste de la page.
+         Le chrono de repos vit DANS la barre d'action de la séance (`.sc-repos`) : il
+         est armé par la validation d'une série, ajustable à ±15 s, et il se passe. Un
+         chrono dans un onglet à part était l'aveu que la séance n'était pas un écran.
+         Ce qui n'existait QUE là — le texte d'honnêteté « il ne sonnera pas », et sa
+         variante par plateforme — a suivi dans la feuille « Réglages de la séance »
+         (js/ecran-seance.js, `reglages()`). Aucune vérité n'a été perdue en route.
+         ─────────────────────────────────────────────────────────────────────── -->
 
     <!-- ── Écran DONNÉES — persistance, quota, export/import ──────────────── -->
     <section data-ecran="donnees" hidden>
@@ -193,8 +238,87 @@
           <span class="statut-txt" id="txt-profil">—</span>
         </div>
         <p class="carte-note" id="note-profil"></p>
+
+        <!-- 🔴 LE POIDS DE CORPS — le seul chiffre du profil qui soit SAISISSABLE aujourd'hui.
+             Il n'est plus cosmétique : depuis que le tonnage compte le corps (tractions, dips),
+             il porte une large part du chiffre affiché en gros sur le bilan de séance. Un poids
+             faux fausse chaque séance de tirage, EN SILENCE — et il est GELÉ à la date de la
+             séance, donc le passé ne se réparerait jamais. D'où l'ordre : le rendre saisissable
+             AVANT que l'historique ne se remplisse.
+             ⚠️ Un seul champ. Le profil complet, l'objectif et l'onboarding sont un AUTRE
+             chantier — on n'ouvre ici que ce qui rend le chiffre de tête réparable. -->
+        <div class="champ-inline" id="champ-poids" hidden>
+          <label class="champ-inline-lab" for="in-poids">Poids de corps</label>
+          <div class="champ-inline-ligne">
+            <div class="champ-inline-boite">
+              <input id="in-poids" inputmode="decimal" value="" placeholder="—" aria-describedby="note-poids">
+              <span class="champ-inline-unite" aria-hidden="true">kg</span>
+            </div>
+            <button class="state-btn" id="btn-poids">Enregistrer</button>
+          </div>
+          <!-- Le gel est VOLONTAIRE (sinon chaque pesée réécrirait l'histoire du carnet).
+               On ne le casse pas — on DIT ce qu'il implique. Deux phrases, pas un paragraphe. -->
+          <p class="carte-note" id="note-poids">
+            Une pesée compte pour les séances <b>à venir</b>. Les séances déjà enregistrées
+            gardent le poids qu'elles avaient : une séance passée ne se réécrit pas.
+          </p>
+        </div>
+
         <div class="carte-actions">
           <button class="state-btn state-btn--ghost" id="btn-reamorcer">Recharger le profil de démo</button>
+        </div>
+      </div>
+
+      <!-- 🔴 LA CIBLE — « ni de fixer un objectif ». Le deuxième champ de saisie de cet onglet.
+           En COURSE, le moteur sait tout faire d'un objectif : distance, échéance, dénivelé. En
+           MUSCU, `objectif` n'était qu'un MOT (« force » / « hypertrophie ») : aucune cible
+           chiffrée, aucune date. Ce bloc les lui donne.
+           ⚠️ Le moteur LIT ce champ (adaptation.js → objectif.js) et peut le REFUSER — viser un
+           mouvement qu'il retire d'un programme serait une contradiction. Il ne se contente pas
+           de le stocker : c'est toute la différence avec le bug qu'on a déjà commis deux fois.
+           ⚠️ L'échéance est une date ABSOLUE. C'est elle, et elle seule, qui sépare une intention
+           d'un objectif — exactement comme `course.date` côté running. -->
+      <div class="carte" id="carte-cible" hidden>
+        <h2 class="carte-titre">Objectif</h2>
+        <div class="ligne-statut">
+          <span class="statut-pastille" id="pastille-cible" data-etat="inconnu" aria-hidden="true"></span>
+          <span class="statut-txt" id="txt-cible">—</span>
+        </div>
+        <!-- ⚠️ UNE LIGNE, pas un paragraphe. Vérifié à l'écran : le « pourquoi » du moteur
+             (substitution, refus, aveu) faisait **trois paragraphes déversés au-dessus des champs**
+             — la texture d'un ARTICLE, exactement ce que le ton refuse. La vérité n'est pas
+             supprimée : elle passe **derrière le tap** (« Pourquoi ? »), comme partout ailleurs. -->
+        <p class="carte-note" id="note-cible"></p>
+        <button class="state-btn state-btn--ghost" id="btn-cible-pourquoi" hidden>Pourquoi ?</button>
+
+        <div class="champ-inline">
+          <label class="champ-inline-lab" for="in-cible-exo">Exercice</label>
+          <select id="in-cible-exo" class="champ-select"></select>
+        </div>
+
+        <div class="champ-inline">
+          <label class="champ-inline-lab" for="in-cible-kg">Charge visée</label>
+          <div class="champ-inline-ligne">
+            <div class="champ-inline-boite">
+              <input id="in-cible-kg" inputmode="decimal" value="" placeholder="—">
+              <span class="champ-inline-unite" aria-hidden="true">kg</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="champ-inline">
+          <label class="champ-inline-lab" for="in-cible-date">Échéance</label>
+          <!-- La date est sur SA ligne : partagée avec le bouton, la boîte se rétrécissait et le
+               champ affichait « 31/12/202( » — une année coupée en deux. Un champ qui ment sur ce
+               qu'il contient est pire qu'un champ moche. -->
+          <div class="champ-inline-boite champ-inline-boite--date">
+            <input id="in-cible-date" type="date" value="">
+          </div>
+        </div>
+
+        <div class="carte-actions">
+          <button class="state-btn" id="btn-cible">Enregistrer</button>
+          <button class="state-btn state-btn--ghost" id="btn-cible-effacer" hidden>Retirer l’objectif</button>
         </div>
       </div>
 
@@ -253,18 +377,136 @@
     </section>
   </main>
 
+  <!-- ══════════════════════════════════════════════════════════════════════
+       LA BARRE D'ACTION — ANCRÉE, FIXE, DANS LA ZONE DU POUCE.
+       C'est la cible du geste le plus répété de l'app (~17× par séance,
+       6× par semaine). Elle ne bouge JAMAIS : l'historique défile derrière.
+       Le chrono vit DEDANS — on ne quitte plus sa séance pour le chercher.
+       Elle prend la place de la barre d'onglets pendant l'effort : zéro
+       navigation sous la barre, le bas de l'écran est l'ACTION.
+       ══════════════════════════════════════════════════════════════════════ -->
+  <div class="sc-bar" id="sc-bar" hidden>
+
+    <!-- Chrono de repos — armé par la validation, jamais bloquant -->
+    <div class="sc-repos" id="sc-repos" hidden>
+      <div class="sc-repos-l">
+        <div class="sc-repos-lab" id="sc-repos-lab">Repos</div>
+        <div class="sc-repos-val" id="sc-repos-val">0:00</div>
+      </div>
+      <div class="sc-repos-a">
+        <button type="button" id="sc-repos-moins" aria-label="Retirer 15 secondes">−15&nbsp;s</button>
+        <button type="button" id="sc-repos-plus" aria-label="Ajouter 15 secondes">+15&nbsp;s</button>
+        <button type="button" id="sc-repos-passer">Passer</button>
+      </div>
+    </div>
+
+    <div id="sc-controles">
+      <!-- 🔴 TROIS LIGNES, ZÉRO PHRASE. C'est la séquence demandée, et elle est meilleure
+           que ce qu'on avait :
+
+             Prévu       82,5 kg × 8      ← le moteur, qui a LU la dernière séance
+             Précédent   80 kg × 8        ← la mémoire (il y a 4 jours)
+             Saisi       [82,5] [8]  RIR  ← le geste
+
+           « Prévu » n'existait pas : la ligne du moteur manquait, donc la boucle ne se
+           voyait pas. Un champ sans valeur affiche « — ». Il ne raconte rien. -->
+      <div class="sc-plan">
+        <div class="sc-plan-l">
+          <span class="sc-plan-k">Prévu</span>
+          <span class="sc-plan-v val val--der" id="sc-prevu-val">—</span>
+        </div>
+        <div class="sc-plan-l">
+          <span class="sc-plan-k">Précédent</span>
+          <span class="sc-plan-v val val--mes" id="sc-prec-val">—</span>
+          <span class="sc-plan-quand" id="sc-prec-quand"></span>
+        </div>
+        <!-- 🔴 REPÈRE — il a DONNÉ ce chiffre, et la substitution le lui reprenait.
+             Le moteur substitue le développé couché barre à la Smith (épaule). La charge
+             déclarée (« 80 kg × 8 ») ne suit PAS : une charge guidée n'est pas une charge
+             libre, et transposer serait inventer. Mais la jeter laissait « Prévu — » et
+             « Charge inconnue » sur son mouvement principal, à sa toute première séance.
+             Cette ligne rend le chiffre — nommé sur SON mouvement d'origine, donc vrai.
+             Elle n'apparaît QUE dans le vide (ni prévu, ni précédent) et disparaît dès
+             la première série loguée. Un repère, jamais une prescription. -->
+        <div class="sc-plan-l" id="sc-repere" hidden>
+          <span class="sc-plan-k">Repère</span>
+          <span class="sc-plan-v val val--der" id="sc-repere-val">—</span>
+          <span class="sc-plan-quand" id="sc-repere-src"></span>
+        </div>
+      </div>
+
+      <div class="sc-plan-l sc-plan-l--saisi">
+        <span class="sc-plan-k sc-plan-k--fort" id="sc-qui">Saisi</span>
+        <button class="sc-del" type="button" id="sc-suppr" hidden>Supprimer</button>
+      </div>
+
+      <div class="sc-champs">
+        <div class="sc-champ">
+          <div class="sc-champ-lab" id="sc-lab-charge">Charge</div>
+          <div class="sc-stepper">
+            <button type="button" data-pas="charge" data-sens="-1" aria-label="Diminuer la charge">–</button>
+            <!-- Tap sur le chiffre = pavé numérique natif. L'échappatoire, jamais
+                 le chemin nominal : la charge est modifiable AU DOIGT, sur place.
+                 🔴 `value` est VIDE au départ, et le placeholder est un tiret — pas un
+                 « 0 ». Quand le moteur ne connaît pas la charge, l'écran ne l'invente
+                 pas : le champ reste manifestement vide, et il APPELLE la saisie.
+                 Un « 0 » a l'air d'une réponse ; il partait en base comme telle. -->
+            <input id="sc-charge" inputmode="decimal" aria-labelledby="sc-lab-charge" value="" placeholder="—">
+            <button type="button" data-pas="charge" data-sens="1" aria-label="Augmenter la charge">+</button>
+          </div>
+        </div>
+        <div class="sc-champ">
+          <div class="sc-champ-lab" id="sc-lab-reps">Reps</div>
+          <div class="sc-stepper">
+            <button type="button" data-pas="reps" data-sens="-1" aria-label="Diminuer les répétitions">–</button>
+            <input id="sc-reps" inputmode="numeric" aria-labelledby="sc-lab-reps" value="0">
+            <button type="button" data-pas="reps" data-sens="1" aria-label="Augmenter les répétitions">+</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Un estimé ne se peint jamais comme un mesuré. Le « Pourquoi ? » est OBLIGATOIRE.
+           🔴 DEUX états, DEUX phrases — le texte est posé par ecran-seance.js :
+             • `estimee`  → le moteur A estimé (squat, 90 kg). La phrase est VRAIE, elle reste.
+             • `inconnue` → le moteur n'a RIEN estimé. Dire « estimée » serait un mensonge :
+                            il ignore, et il le dit. On ne supprime pas une vérité, on
+                            supprime une invention. -->
+      <button class="sc-charge-note" type="button" id="sc-charge-note" hidden>
+        <span class="why-mark" aria-hidden="true">?</span>
+        <span id="sc-charge-note-txt"></span>
+      </button>
+
+      <!-- ⚠️ LE geste. Un tap = la série est validée AVEC son vrai RIR, et le
+           chrono est armé. Rien n'est pré-coché : le tap EST la déclaration.
+           C'est le SEUL aplat d'accent de l'écran. -->
+      <div class="sc-seg-lab" id="sc-seg-lab">
+        <span>Valider&nbsp;— <b>reps en réserve&nbsp;?</b></span>
+        <span class="sc-echelle"></span>
+      </div>
+      <!-- 🔴 LE PAVÉ EST VIDE ICI, ET C'EST VOULU. Il était écrit en dur — 0 · 1 · 2 · 3 —
+           pendant que le moteur prescrivait « @ RIR 3–4 » : **le haut de sa propre fourchette
+           cible n'était pas saisissable.** Un chiffre en dur dans le HTML est un chiffre qui
+           ment dès que le moteur change, et il ment en silence.
+           Les boutons sont désormais DÉRIVÉS de `RIR_MAX` (seance.js), la seule constante que
+           `verifierSerie()` fait respecter. Une source, un pavé. Voir ecran-seance.js. -->
+      <div class="sc-seg" id="sc-seg" role="group" aria-labelledby="sc-seg-lab"></div>
+    </div>
+
+    <button class="sc-cta" type="button" id="sc-terminer" hidden>Terminer la séance</button>
+  </div>
+
   <nav class="onglets" aria-label="Navigation principale">
     <button class="onglet" data-vers="seance">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
         <path d="M6.5 6.5v11M17.5 6.5v11M3.5 9v6M20.5 9v6M6.5 12h11"/>
       </svg>
-      <span>Programme</span>
+      <span>Séance</span>
     </button>
-    <button class="onglet" data-vers="chrono">
+    <button class="onglet" data-vers="programme">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
-        <circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2M9 2h6"/>
+        <path d="M5 4h14v16H5zM9 8h6M9 12h6M9 16h3"/>
       </svg>
-      <span>Repos</span>
+      <span>Programme</span>
     </button>
     <button class="onglet" data-vers="donnees">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
@@ -275,7 +517,34 @@
   </nav>
 </div>
 
+<!-- ══════════════════════════════════════════════════════════════════════
+     LA FEUILLE — c'est elle qui rend possible « honnête SANS bavard ».
+     Tout le « pourquoi » du moteur monte ICI, derrière un tap : rien n'est
+     supprimé, tout est déplacé. Le glissé de la poignée, le voile, Échap et le
+     bouton « Fermer » sont fournis par design/sheet.js — trois portes de sortie,
+     dont aucune n'exige une main.
+     ══════════════════════════════════════════════════════════════════════ -->
+<div class="scrim" id="scrim" data-scrim hidden>
+  <!-- `tabindex="-1"` : c'est la FEUILLE qui reçoit le focus à l'ouverture, pas son
+       premier bouton — sinon l'anneau de focus peint une valeur (le « 0 » du RPE)
+       comme un choix déjà fait. Voir ui.js, `ouvrirFeuille`. -->
+  <div class="feuille" data-sheet tabindex="-1" role="dialog" aria-modal="true" aria-labelledby="feuille-titre">
+    <div class="sheet-grip" data-sheet-grip aria-hidden="true"></div>
+    <h3 class="feuille-titre" id="feuille-titre"></h3>
+    <p class="feuille-sous" id="feuille-sous" hidden></p>
+    <div id="feuille-corps"></div>
+    <button class="feuille-fermer" type="button" id="feuille-fermer">Fermer</button>
+  </div>
+</div>
+
 <div class="toasts" id="toasts" role="status" aria-live="polite" aria-atomic="false"></div>
+
+<!-- Le design system, point de vérité unique — on le réutilise, on ne le
+     réécrit pas. `motion.js` AVANT `sheet.js` (il lit les tokens de durée).
+     Scripts classiques : ils s'exécutent avant le module ci-dessous, donc
+     `window.Sheet` existe quand l'app démarre. -->
+<script src="../design/motion.js"></script>
+<script src="../design/sheet.js"></script>
 
 <script type="module" src="./js/main.js"></script>
 </body>

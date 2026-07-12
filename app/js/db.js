@@ -69,6 +69,36 @@ export function ouvrirDB() {
   return dbPromise;
 }
 
+// ══════════════════════════════════════════════════════════════════════
+// 🔴 UNE ÉCRITURE QUI ÉCHOUE NE DOIT JAMAIS ÊTRE SILENCIEUSE
+// ══════════════════════════════════════════════════════════════════════
+//
+// Depuis le 2026-07-12, **c'est cette couche qui écrit ses séries.** Un `catch`
+// qui avale son erreur ici, c'est une série perdue **qu'il ne saura jamais avoir
+// perdue** — il rangera la barre, content, et la séance ne sera pas là.
+//
+// Le quota plein, une transaction avortée par iOS pendant qu'il pose ses
+// haltères, une base fermée par un autre onglet : ça arrive, et ça arrive
+// justement au pire moment. Le contrat de ce module :
+//
+//   1. **toute erreur d'écriture est RELANCÉE** (l'appelant décide quoi en dire) ;
+//   2. **et elle est SIGNALÉE** sur `ECHECS`, pour que la coquille l'affiche même
+//      si personne n'a mis de `try` autour. Un `await ecrireMeta(...)` oublié dans
+//      un coin ne doit pas produire un échec muet.
+//
+// C'est le seul endroit du module qui connaisse quelque chose de l'extérieur —
+// et encore : un `EventTarget`, pas le DOM. `db.js` reste sans UI.
+
+/** Canal des échecs d'ÉCRITURE. `main.js` s'y branche et lève une bannière. */
+export const ECHECS = new EventTarget();
+
+function signalerEchec(operation, store, erreur) {
+  // La console garde la trace technique — l'utilisateur, lui, aura la bannière.
+  console.error(`[db] ${operation}(${store}) a échoué :`, erreur);
+  ECHECS.dispatchEvent(new CustomEvent('echec', { detail: { operation, store, erreur } }));
+  return erreur;
+}
+
 /** Enveloppe une IDBRequest dans une promesse. */
 function promesse(req) {
   return new Promise((resolve, reject) => {
@@ -95,12 +125,24 @@ async function transaction(nomStore, mode, fn) {
       .catch((e) => {
         try {
           tx.abort();
-        } catch {
-          /* déjà terminée */
+        } catch (avorte) {
+          // La transaction était déjà finie — ce n'est pas la vraie cause, mais on
+          // ne l'efface pas : un `catch {}` nu ici, c'est une piste effacée le jour
+          // où on cherchera pourquoi une série a disparu.
+          console.warn('[db] abandon d’une transaction déjà terminée :', avorte);
         }
         reject(e);
       });
   });
+}
+
+/** Une écriture : elle relance SON erreur, et elle la crie. */
+async function ecriture(operation, store, mode, fn) {
+  try {
+    return await transaction(store, mode, fn);
+  } catch (e) {
+    throw signalerEchec(operation, store, e);
+  }
 }
 
 // ── CRUD générique ───────────────────────────────────────────────────
@@ -112,15 +154,15 @@ export const lireTout = (store) => transaction(store, 'readonly', (s) => promess
 export const compter = (store) => transaction(store, 'readonly', (s) => promesse(s.count()));
 
 export const ecrire = (store, valeur) =>
-  transaction(store, 'readwrite', (s) => promesse(s.put(valeur)));
+  ecriture('ecrire', store, 'readwrite', (s) => promesse(s.put(valeur)));
 
 export const ecrireLot = (store, valeurs) =>
-  transaction(store, 'readwrite', (s) => Promise.all(valeurs.map((v) => promesse(s.put(v)))));
+  ecriture('ecrireLot', store, 'readwrite', (s) => Promise.all(valeurs.map((v) => promesse(s.put(v)))));
 
 export const supprimer = (store, cle) =>
-  transaction(store, 'readwrite', (s) => promesse(s.delete(cle)));
+  ecriture('supprimer', store, 'readwrite', (s) => promesse(s.delete(cle)));
 
-export const vider = (store) => transaction(store, 'readwrite', (s) => promesse(s.clear()));
+export const vider = (store) => ecriture('vider', store, 'readwrite', (s) => promesse(s.clear()));
 
 // ── Raccourcis `meta` (clé/valeur) ───────────────────────────────────
 

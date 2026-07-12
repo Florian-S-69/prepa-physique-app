@@ -46,11 +46,11 @@
 //
 // **Ce que le moteur fait, et c'est tout ce qu'il peut faire honnêtement :**
 //   1. il **DÉCLARE** l'origine de sa fenêtre (musculation) — `FENETRE_NM.origine` ;
-//   2. il rend la fenêtre **PARAMÉTRABLE** (`analyserSemaine({ fenetre_nm })`) — le jour où le produit
+//   2. il rend la fenêtre **PARAMÉTRABLE** (`analyserSemaine({ fenetre_nm })`) — le jour où le propriétaire
 //      tranche, c'est un paramètre, pas une réécriture ;
 //   3. il **DÉTECTE** le cas (grosse sortie en D− récente suivie de jambes lourdes ou d'une
 //      séance-clé) et il le **SIGNALE** — `signauxDescente()` ;
-//   4. il **REMONTE l'arbitrage au produit** (sécurité ↔ entraînabilité) — `FENETRE_DESCENTE`.
+//   4. il **REMONTE l'arbitrage au propriétaire** (sécurité ↔ entraînabilité) — `FENETRE_DESCENTE`.
 //
 // Module PUR : aucune I/O.
 
@@ -91,11 +91,11 @@ export const FENETRE_NM = {
  * que ça sonne prudent serait exactement le geste que ce moteur s'interdit.
  *
  * **C'est un arbitrage PRODUIT — sécurité (allonger) ↔ entraînabilité (garder) — et il appartient
- * pas au moteur.** Le moteur pose les deux termes sous les yeux du produit et continue de travailler.
+ * au propriétaire.** Le moteur pose les deux termes sous ses yeux et continue de travailler.
  */
 export const FENETRE_DESCENTE = {
   valeur_h: null, // 🔴 AUCUNE SOURCE. Le moteur ne fabrique pas de « 72 h ».
-  statut: "NON ARBITRÉE — décision produit en attente",
+  statut: "NON ARBITRÉE — décision produit en attente (le propriétaire)",
   donnees_recuperation: "3–4 jours (72–96 h)",
   ce_que_disent_les_donnees:
     "Après **30 min de course à −20 %** (n = 10) : force max volontaire à **84 %** à 24 h ; " +
@@ -113,7 +113,7 @@ export const FENETRE_DESCENTE = {
   ce_que_le_moteur_fait:
     "Il **déclare** l'origine de sa fenêtre (musculation), il la rend **paramétrable**, il **détecte** " +
     "la conjonction (grosse descente récente + jambes lourdes ou séance-clé) et il te la **signale**.",
-  arbitrage: "**SÉCURITÉ (allonger la fenêtre) ↔ ENTRAÎNABILITÉ (la garder).** Arbitrage produit, à trancher.",
+  arbitrage: "**SÉCURITÉ (allonger la fenêtre) ↔ ENTRAÎNABILITÉ (la garder).** À le propriétaire de trancher.",
   source: "veille/20 §2.2, §9.1 règle 4, §9.4 — conséquence remontée à l'ADR 0006",
 };
 
@@ -288,7 +288,7 @@ export function courseQualitative(sortie, { seuil_longue_km = 16 } = {}) {
  *        valeur par défaut (`FENETRE_NM`, 24–48 h) est **calibrée sur la MUSCULATION**, et la veille
  *        trail montre qu'elle est **trop courte après une grosse descente** (§9.4). Aucune source ne
  *        donne la bonne valeur → le moteur **n'en fabrique pas**, mais il rend le réglage possible :
- *        le jour où le produit tranche, c'est **un paramètre**, pas une réécriture. Les écarts examinés
+ *        le jour où le propriétaire tranche, c'est **un paramètre**, pas une réécriture. Les écarts examinés
  *        en découlent (`max_h / 24`) : 48 h → J-0/1/2 ; 72 h → J-0/1/2/3.
  */
 export function analyserSemaine(jours, { zone_jambes_active = null, fenetre_nm = FENETRE_NM } = {}) {
@@ -384,7 +384,7 @@ export function analyserSemaine(jours, { zone_jambes_active = null, fenetre_nm =
  *
  * ⚠️ **Ce que cette fonction NE fait PAS : décider.** Elle ne déplace rien, elle ne bloque rien, elle
  * **n'invente aucune fenêtre de remplacement**. Elle **détecte** et elle **dit**. L'arbitrage
- * (sécurité ↔ entraînabilité) appartient au produit — `FENETRE_DESCENTE`.
+ * (sécurité ↔ entraînabilité) appartient au propriétaire — `FENETRE_DESCENTE`.
  *
  * Le balayage va jusqu'à **`RECUP_DESCENTE_J` jours**, qui n'est **pas** une fenêtre décidée : c'est
  * l'**horizon des données** (la trace neuromusculaire est résolue à 96 h). Regarder moins loin
@@ -434,7 +434,7 @@ function signalDescente({ d, cible, ecart, quandSrc, quandCible, f }) {
         : `⚠️ **La fenêtre du moteur (${f.libelle}) est CALIBRÉE SUR LA MUSCULATION** (veille/11) — elle n'a **jamais** ` +
           `été validée après une descente.`) +
       ` 🔴 **Aucune source ne donne la bonne fenêtre, et le moteur n'en fabriquera pas** (pas de « 72 h » inventé). ` +
-      `Il te **signale** le cas ; l'arbitrage **sécurité ↔ entraînabilité** t'appartient.`,
+      `Il te **signale** le cas ; l'arbitrage **sécurité ↔ entraînabilité** t'appartient (voir « POUR LE PROPRIÉTAIRE »).`,
   };
 }
 
@@ -476,7 +476,7 @@ function sequenceSeances(seances, joursParSemaine) {
 }
 
 /**
- * Compose la semaine d'un profil **muscu-first qui court** (PPL 6 j + 1 course).
+ * Compose la semaine d'un profil **muscu-first qui court** (le cas du propriétaire : PPL 6 j + 1 course).
  *
  * C'est exactement le cas où la contrainte mord : avec 6 jours de salle, la course tombe
  * mécaniquement à côté d'un jour de jambes — la seule journée libre est, par construction, collée

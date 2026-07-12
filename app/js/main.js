@@ -6,20 +6,29 @@
  *   2. tient la PORTE d'installation (contrainte n°1) ;
  *   3. rend l'écran « Mes données » : persist() + quota réel (contrainte n°2) ;
  *   4. branche l'export / import JSON + le rappel (contrainte n°3) ;
- *   5. fait vivre le chrono de repos par timestamps (contrainte n°4).
+ *   5. restaure le chrono de repos par timestamps au démarrage (contrainte n°4).
+ *      ⛔ Il n'a plus d'ÉCRAN : l'onglet « Repos » a été retiré le 2026-07-12.
+ *      « S'il y a déjà un chrono pour exécuter les exercices, l'onglet repos ne
+ *      sert plus à rien. » Le chrono vit dans la barre d'action de la séance.
  *
  *   6. ✅ branche LE MOTEUR (`src/lib/*.js`) sur l'écran « Programme » — via
  *      js/moteur.js, qui l'IMPORTE (il ne le copie pas).
  *
- * ⛔ Ce qu'il ne fait PAS ENCORE : le **log de séance** (le geste des 6×/semaine).
- *    La piste design le refond — bouton d'action ancré, chrono armé au même tap.
- *    On l'intégrera après, pour ne pas construire sur une UI qui bouge.
+ *   7. 🔴 branche L'ÉCRAN DE SÉANCE (js/ecran-seance.js) — **le geste des
+ *      6×/semaine**. C'est là qu'on entre ses charges, qu'on valide ses séries,
+ *      qu'on lance son repos sans quitter l'écran, et qu'on note son RPE.
+ *      Avant lui, le magasin `seances` d'IndexedDB n'avait jamais reçu une
+ *      seule ligne : l'app ne mémorisait RIEN de ce qui était fait.
  */
 
-import { $, $$, afficherEcran, toast, formaterDate } from './ui.js';
-import { ouvrirDB, lireMeta, ecrireMeta } from './db.js';
+import { $, $$, afficherEcran, toast, formaterDate, brancherFeuille, ouvrirFeuille, blocPourquoi } from './ui.js';
+import { initSeance, brancherSeance, activerSeance, reprendreSeance } from './ecran-seance.js';
+import { ouvrirDB, lireMeta, ecrireMeta, ECHECS } from './db.js';
 import { afficherProgramme } from './programme.js';
-import { chargerPersona, reamorcerPersona, amorceDisponible } from './moteur.js';
+import {
+  chargerPersona, reamorcerPersona, amorceDisponible, enregistrerPoidsCorps,
+  enregistrerCible, effacerCible, genererProgramme,
+} from './moteur.js';
 import { demanderPersistance, estPersistant, estimerQuota, formaterOctets } from './storage.js';
 import {
   detecterPlateforme,
@@ -38,22 +47,10 @@ import {
   libelleSauvegarde,
   SEUIL_RAPPEL_JOURS,
 } from './backup.js';
-import {
-  restaurerChrono,
-  lireChrono,
-  demarrerChrono,
-  arreterChrono,
-  ajusterChrono,
-  doitSignalerFin,
-  formaterChrono,
-  amorcerAudio,
-  bip,
-  garderEcranAllume,
-  libererEcran,
-  reprendreWakeLockSiBesoin,
-  wakeLockSupporte,
-  ecranVerrouille,
-} from './timer.js';
+// ⛔ Le chrono n'a plus d'écran à lui : il vit DANS la séance (ecran-seance.js).
+// Ce qui reste ici est le strict nécessaire au CYCLE DE VIE — restaurer un repos
+// armé avant qu'iOS ne tue l'app, et reprendre le Wake Lock au retour.
+import { restaurerChrono, reprendreWakeLockSiBesoin } from './timer.js';
 
 const PLATEFORME = detecterPlateforme();
 /** 🔴 Ce que le stockage de CETTE plateforme fait vraiment (iOS ≠ Android). */
@@ -303,6 +300,7 @@ async function rendreProfil() {
   const pastille = $('#pastille-profil');
   const txt = $('#txt-profil');
   const note = $('#note-profil');
+  const champPoids = $('#champ-poids');
 
   try {
     const { persona, amorce } = await chargerPersona();
@@ -313,11 +311,20 @@ async function rendreProfil() {
     if (!persona) {
       pastille.dataset.etat = 'inconnu';
       txt.textContent = 'Aucun profil';
+      // ⚠️ « Le moteur a besoin de savoir qui tu es » — l'app parlait du moteur comme
+      //    d'un personnage. Sans profil, il n'y a rien à programmer : c'est un ÉTAT.
       note.innerHTML =
-        'Le moteur a besoin de savoir qui tu es pour programmer quoi que ce soit. ' +
+        'Sans profil, rien à programmer. ' +
         '<b>Importe une sauvegarde</b> (ci-dessous) — ou attends l’onboarding, qui te posera les questions.';
+      // Sans profil, il n'y a rien à peser : un champ qui ne peut rien écrire est un mensonge.
+      champPoids.hidden = true;
       return;
     }
+
+    // 🔴 Le poids de corps devient SAISISSABLE. Le champ est amorcé sur la valeur en base —
+    // pas sur un placeholder : il corrige un chiffre, il n'en invente pas un.
+    champPoids.hidden = false;
+    $('#in-poids').value = String(persona.profil.poids_kg ?? '').replace('.', ',');
 
     const lim = persona.muscu?.limitations ?? [];
     const actives = lim.filter((l) => l.statut === 'ACTIF').length;
@@ -331,7 +338,9 @@ async function rendreProfil() {
       (amorce
         ? "Ce profil vient d'être <b>amorcé depuis le dépôt</b> : il est maintenant dans ta base, sur cet appareil. "
         : 'Ce profil est lu <b>dans ta base</b>, sur cet appareil. ') +
-      "L'onboarding le remplacera — le moteur, lui, ne changera pas.";
+      // « — le moteur, lui, ne changera pas » rassurait sur une implémentation. Ça ne dit
+      // rien à qui utilise l'app : c'est une note de développeur affichée à l'utilisateur.
+      "L'onboarding le remplacera.";
   } catch (e) {
     // Là, en revanche, quelque chose a VRAIMENT échoué (base illisible, persona
     // corrompu). On le dit comme une erreur, parce que c'en est une.
@@ -429,10 +438,197 @@ function brancherSauvegarde() {
       // refléter TOUT DE SUITE. Sans ça, l'utilisateur importe, ne voit rien
       // changer, et croit que ça n'a pas marché.
       await rendreProfil();
-      await afficherProgramme().catch(() => {}); // l'erreur est déjà rendue dans l'écran
+      const resultat = await afficherProgramme().catch(() => null); // l'erreur est déjà rendue dans l'écran
+      // ⚠️ …et l'écran de SÉANCE aussi. Il ne l'était pas : après un import, il
+      // continuait d'afficher « pas de profil sur cet appareil » jusqu'au prochain
+      // démarrage de l'app. L'import amène AUSSI les séances loguées : la séance
+      // doit relire son historique, pas seulement son programme.
+      await initSeance(resultat);
     } catch (e) {
       toast(e.message, 'erreur'); // messages déjà écrits pour un humain (backup.js)
     }
+  });
+}
+
+/**
+ * 🔴 LA PESÉE — le premier chiffre du profil que cette app sait recevoir.
+ *
+ * Avant lui, l'onglet Données n'avait **aucun champ de saisie** (un seul `<input>`, de type
+ * `file`, caché, pour l'import). Le poids de corps s'affichait dans une phrase, en lecture
+ * seule — et depuis que le tonnage compte le corps, il porte une large part du chiffre de
+ * tête du bilan de séance.
+ *
+ * ⚠️ Après une pesée, le moteur doit **re-tourner** : le persona a changé, donc la séance à
+ * venir aussi (elle gèlera le nouveau poids à son démarrage). C'est exactement le geste que
+ * l'import fait déjà — on emprunte le même chemin, on n'en invente pas un deuxième.
+ */
+function brancherPoids() {
+  const champ = $('#in-poids');
+  const btn = $('#btn-poids');
+
+  const peser = async () => {
+    try {
+      const poids = await enregistrerPoidsCorps(champ.value);
+      await rendreProfil();
+      // Le moteur relit le persona (donc le poids), et l'écran de séance avec lui.
+      const resultat = await afficherProgramme().catch(() => null);
+      await initSeance(resultat);
+      toast(
+        `Poids de corps : ${String(poids).replace('.', ',')} kg. Il comptera à partir de ta prochaine séance.`,
+        'succes',
+      );
+    } catch (e) {
+      toast(e.message, 'erreur'); // messages déjà écrits pour un humain (moteur.js)
+    }
+  };
+
+  btn.addEventListener('click', peser);
+  // Entrée valide : le clavier numérique d'iOS n'a pas de bouton « OK », mais un « Go ».
+  champ.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); peser(); }
+  });
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 🔴 LA CIBLE — « ni de fixer un objectif »
+// ══════════════════════════════════════════════════════════════════════════════
+//
+// ⚠️ **Le TON.** Un champ vide affiche **`—`**, pas « le moteur ne connaît pas ton objectif ».
+// L'app ne dit pas « je », ne pose pas de question. Mais **aucune vérité ne disparaît** : le
+// *pourquoi* du moteur (refus, adaptation, progression non mesurable) est **rendu**, parce qu'il
+// vient du moteur et qu'il est la raison d'être du produit (`philosophy.md` §4).
+//
+// ⚠️ **L'app n'écrit AUCUNE explication.** Toutes viennent de `objectif.js` (`cible.pourquoi`).
+// Si elle en écrivait, le moteur et l'écran raconteraient deux histoires.
+
+/**
+ * L'état de la cible, tel que le MOTEUR l'a évalué. Rien n'est ré-interprété ici.
+ * Exportée pour être **testable au DOM** : un test qui reconstruit la chaîne qu'il vérifie ne
+ * teste que lui-même.
+ */
+export async function rendreCible() {
+  const carte = $('#carte-cible');
+  const pastille = $('#pastille-cible');
+  const txt = $('#txt-cible');
+  const note = $('#note-cible');
+  const select = $('#in-cible-exo');
+  const effacer = $('#btn-cible-effacer');
+
+  const resultat = await genererProgramme().catch(() => null);
+  if (!resultat) {
+    carte.hidden = true; // pas de profil ⇒ rien à cibler. Un champ qui ne peut rien écrire ment.
+    return;
+  }
+  carte.hidden = false;
+
+  const { programme, cible, records } = resultat;
+
+  // Les exercices proposables : ceux du programme, plus ceux que le carnet connaît déjà.
+  // On ne propose pas de champ libre : une faute de frappe deviendrait une cible « inconnue »,
+  // que le moteur refuserait — un refus mérité, mais évitable.
+  const noms = [
+    ...new Set([
+      ...(programme.seances ?? []).flatMap((s) => (s.exercices ?? []).map((e) => e.nom)),
+      ...(records ?? []).map((r) => r.nom),
+    ]),
+  ].sort((a, b) => a.localeCompare(b, 'fr'));
+
+  select.replaceChildren();
+  for (const nom of noms) {
+    const o = document.createElement('option');
+    o.value = nom;
+    o.textContent = nom;
+    select.append(o);
+  }
+
+  const pourquoi = $('#btn-cible-pourquoi');
+
+  // Aucune cible : un ÉTAT, pas une phrase. Le `—` fait le travail.
+  if (!cible) {
+    pastille.dataset.etat = 'inconnu';
+    txt.textContent = '—';
+    note.textContent = 'Aucun objectif fixé.';
+    effacer.hidden = true;
+    pourquoi.hidden = true;
+    $('#in-cible-kg').value = '';
+    $('#in-cible-date').value = '';
+    return;
+  }
+
+  effacer.hidden = false;
+  $('#in-cible-exo').value = cible.exercice ?? '';
+  $('#in-cible-kg').value = cible.charge_cible_kg != null ? String(cible.charge_cible_kg).replace('.', ',') : '';
+  $('#in-cible-date').value = cible.echeance ?? '';
+
+  pastille.dataset.etat = cible.statut === 'REFUSE' ? 'ko' : cible.statut === 'ADAPTE' ? 'attention' : 'ok';
+  txt.textContent =
+    cible.statut === 'REFUSE'
+      ? 'Objectif refusé'
+      // ⚠️ `formaterDate` attend une **Date**, pas une chaîne (elle appelle `toLocaleDateString`).
+      //    L'échéance est une chaîne `AAAA-MM-JJ` : on la convertit, sinon l'écran plante.
+      : `${cible.exercice} · ${cible.charge_cible_kg} kg · ${formaterDate(new Date(`${cible.echeance}T00:00:00`))}`;
+
+  // 🔴 UNE LIGNE — l'ÉTAT. Le record est le dénominateur ; l'écart est ce qu'il reste.
+  //    Un record au poids du corps se lit en REPS : le « 0 kg » ne peut pas sortir d'ici non plus.
+  const r = cible.record;
+  note.textContent =
+    cible.statut === 'REFUSE'
+      ? "Le moteur refuse cet objectif."
+      : `Record ${!r ? '—' : r.au_poids_du_corps ? `${r.reps} reps` : `${String(r.charge_kg).replace('.', ',')} kg × ${r.reps}`}` +
+        ` · Écart ${cible.ecart_kg == null ? '—' : `${cible.ecart_kg <= 0 ? '' : '+'}${String(cible.ecart_kg).replace('.', ',')} kg`}` +
+        ` · Progression ${cible.progression ? `${cible.progression.delta_kg >= 0 ? '+' : ''}${String(cible.progression.delta_kg).replace('.', ',')} kg / ${String(cible.progression.semaines).replace('.', ',')} sem` : '—'}`;
+
+  // 🔴 …et la VÉRITÉ derrière le tap. Elle n'est pas supprimée — elle est DÉPLACÉE.
+  //    (Trois paragraphes de prose déversés au-dessus des champs : c'était un ARTICLE.)
+  const raisons = cible.pourquoi ?? [];
+  pourquoi.hidden = raisons.length === 0;
+  pourquoi.onclick = () =>
+    ouvrirFeuille({
+      titre: cible.statut === 'REFUSE' ? 'Objectif refusé' : 'Ton objectif',
+      sous: cible.echeance ? `Échéance : ${cible.echeance}` : null,
+      corps: blocPourquoi(
+        raisons.map((x) => ({
+          label: cible.statut === 'REFUSE' ? 'Refus du moteur' : 'Ce que ça change',
+          texte: String(x),
+        })),
+      ),
+      fermer: 'Fermer',
+    });
+}
+
+/**
+ * 🔴 La cible s'ÉCRIT — et le moteur RE-TOURNE derrière, comme après une pesée.
+ * Sans ça, on aurait un champ qui se remplit et un écran qui ne bouge pas : le bug de ce projet,
+ * pour la troisième fois.
+ */
+function brancherCible() {
+  const fixer = async () => {
+    try {
+      const cible = await enregistrerCible({
+        exercice: $('#in-cible-exo').value,
+        charge_kg: String($('#in-cible-kg').value).replace(',', '.'),
+        echeance: $('#in-cible-date').value,
+      });
+      const resultat = await afficherProgramme().catch(() => null);
+      await initSeance(resultat);
+      await rendreCible();
+      toast(`Objectif : ${cible.charge_kg} kg au ${cible.exercice.toLowerCase()}.`, 'succes');
+    } catch (e) {
+      toast(e.message, 'erreur'); // le message vient du moteur — il est déjà écrit pour un humain
+    }
+  };
+
+  $('#btn-cible').addEventListener('click', fixer);
+  $('#in-cible-kg').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); fixer(); }
+  });
+
+  $('#btn-cible-effacer').addEventListener('click', async () => {
+    await effacerCible();
+    const resultat = await afficherProgramme().catch(() => null);
+    await initSeance(resultat);
+    await rendreCible();
+    toast('Objectif retiré.', 'succes');
   });
 }
 
@@ -461,119 +657,44 @@ function brancherProfil() {
 }
 
 // ══════════════════════════════════════════════════════════════════════
-// 5. CHRONO DE REPOS (contrainte n°4) — timestamps, jamais un compteur
-// ══════════════════════════════════════════════════════════════════════
-
-let boucleChrono = null;
-
-function rendreChrono() {
-  const c = lireChrono();
-  const carte = $('.chrono-carte');
-  const valeur = $('#chrono-valeur');
-  const etat = $('#chrono-etat');
-
-  if (!c.actif) {
-    carte.dataset.etat = 'repos';
-    valeur.textContent = '0:00';
-    etat.textContent = 'Choisis une durée';
-    $('#chrono-jauge-fill').style.width = '0%';
-    $('#chrono-controles').hidden = true;
-    for (const b of $$('.chrono-preset')) b.setAttribute('aria-pressed', 'false');
-    return;
-  }
-
-  $('#chrono-controles').hidden = false;
-
-  if (c.fini) {
-    carte.dataset.etat = 'fini';
-    valeur.textContent = '0:00';
-    etat.textContent =
-      c.depassementS > 5 ? `Repos terminé il y a ${formaterChrono(c.depassementS)}` : 'Repos terminé — go';
-    $('#chrono-jauge-fill').style.width = '100%';
-  } else {
-    carte.dataset.etat = 'court';
-    valeur.textContent = formaterChrono(c.restantMs / 1000);
-    etat.textContent = ecranVerrouille() ? "Écran maintenu allumé" : 'Repos en cours';
-    $('#chrono-jauge-fill').style.width = `${(1 - c.restantMs / (c.duree * 1000)) * 100}%`;
-  }
-
-  // Fin du repos : bip UNIQUEMENT si on est là pour l'entendre (cf. timer.js).
-  if (doitSignalerFin()) {
-    bip();
-    $('#chrono-annonce').textContent = 'Repos terminé.';
-    libererEcran();
-  }
-}
-
-function lancerBoucle() {
-  arreterBoucle();
-  rendreChrono();
-  // 250 ms : assez fluide pour une seconde qui tourne, assez lent pour la batterie.
-  // La boucle ne sert QU'À AFFICHER : la vérité est le timestamp (timer.js).
-  boucleChrono = setInterval(rendreChrono, 250);
-}
-
-function arreterBoucle() {
-  if (boucleChrono) clearInterval(boucleChrono);
-  boucleChrono = null;
-}
-
-function brancherChrono() {
-  for (const btn of $$('.chrono-preset')) {
-    btn.addEventListener('click', async () => {
-      const duree = Number(btn.dataset.duree);
-      amorcerAudio(); // l'AudioContext doit naître d'un geste utilisateur (iOS)
-
-      await demarrerChrono(duree);
-      for (const b of $$('.chrono-preset')) b.setAttribute('aria-pressed', String(b === btn));
-      $('#chrono-annonce').textContent = `Repos de ${formaterChrono(duree)} démarré.`;
-
-      // Wake Lock : iOS ≥ 18.4 en PWA installée (bug WebKit 254545, corrigé le 2025-03-31).
-      // Absent ou refusé → l'écran s'éteindra. On le dit, on ne le cache pas.
-      const tenu = await garderEcranAllume();
-      if (!tenu && wakeLockSupporte()) {
-        toast("L'écran ne peut pas rester allumé maintenant. Le chrono reste juste.", 'info');
-      }
-      lancerBoucle();
-    });
-  }
-
-  for (const btn of $$('[data-ajuste]')) {
-    btn.addEventListener('click', async () => {
-      await ajusterChrono(Number(btn.dataset.ajuste));
-      rendreChrono();
-    });
-  }
-
-  $('#btn-stop-chrono').addEventListener('click', async () => {
-    await arreterChrono();
-    await libererEcran();
-    $('#chrono-annonce').textContent = 'Repos arrêté.';
-    rendreChrono();
-  });
-
-  // Wake Lock absent : on explique pourquoi — et la raison n'est pas la même partout.
-  // « il faut iOS 18.4 ou plus » n'a aucun sens sur un Android.
-  if (!wakeLockSupporte()) {
-    $('#txt-chrono-honnete').innerHTML = REGIME.sansWakeLock;
-  }
-}
-
-// ══════════════════════════════════════════════════════════════════════
 // Cycle de vie : le retour dans l'app est le moment de vérité
 // ══════════════════════════════════════════════════════════════════════
+
+/**
+ * 🔴 UNE ÉCRITURE QUI ÉCHOUE DOIT SE VOIR — sur l'écran, pas dans la console.
+ *
+ * `db.js` relance toujours l'erreur, et les appelants qui comptent (la validation
+ * d'une série, l'enregistrement d'une séance) la rendent déjà en toast. Ce filet-ci
+ * attrape **tout le reste** : les écritures qu'on a lancées sans `try`, et celles
+ * qu'on ajoutera demain en oubliant d'en mettre un.
+ *
+ * Sans lui, le scénario est : il valide sa série, le quota est plein, l'écriture
+ * échoue, **rien ne s'affiche**, il range la barre — et sa séance n'existe pas.
+ */
+function brancherEchecsDeBase() {
+  ECHECS.addEventListener('echec', (e) => {
+    const { erreur } = e.detail;
+    banniere(
+      'ecriture-ko',
+      'erreur',
+      "<b>Une écriture a échoué.</b> Ta dernière action n'est peut-être <b>pas enregistrée</b>. " +
+        `Exporte tes données maintenant. <i>(${erreur?.name ?? 'Erreur'} : ${erreur?.message ?? 'cause inconnue'})</i>`,
+      'Exporter',
+      () => {
+        naviguer('donnees');
+        $('#btn-export').click();
+      },
+    );
+  });
+}
 
 function brancherCycleDeVie() {
   // 🔴 iOS gèle le JS en arrière-plan. Au retour, on RECALCULE tout depuis les
   // timestamps — c'est exactement ce que la contrainte n°4 exige.
   const auRetour = async () => {
-    if (document.visibilityState !== 'visible') {
-      arreterBoucle();
-      return;
-    }
+    if (document.visibilityState !== 'visible') return;
     await reprendreWakeLockSiBesoin(); // le système relâche le verrou quand on part
-    if (lireChrono().actif) lancerBoucle();
-    else rendreChrono();
+    reprendreSeance(); // la séance en cours recalcule son chrono depuis les timestamps
     rendreQuota();
   };
 
@@ -622,6 +743,7 @@ function naviguer(vers) {
   history.pushState({ ecran: vers }, '');
   ecranCourant = vers;
   afficherEcran(vers);
+  if (vers === 'seance') activerSeance();
 }
 
 function brancherNavigation() {
@@ -634,6 +756,7 @@ function brancherNavigation() {
     const vers = e.state?.ecran ?? ECRAN_RACINE;
     ecranCourant = vers;
     afficherEcran(vers); // on N'EMPILE PAS : on vient justement de dépiler
+    if (vers === 'seance') activerSeance();
   });
 }
 
@@ -670,10 +793,14 @@ async function demarrer() {
     return;
   }
 
+  brancherEchecsDeBase(); // AVANT tout le reste : la première écriture peut déjà échouer
   brancherNavigation();
-  brancherChrono();
+  brancherFeuille(); // le glissé de la poignée (design/sheet.js)
+  brancherSeance(); // le chrono de repos est DEDANS — il n'a plus d'onglet à lui
   brancherSauvegarde();
   brancherProfil();
+  brancherPoids(); // le poids de corps est enfin SAISISSABLE — il porte le tonnage
+  brancherCible(); // et l'objectif chiffré aussi — le moteur le LIT, il ne le stocke pas
   brancherCycleDeVie();
 
   await restaurerChrono(); // un chrono lancé avant un kill de l'app doit revenir juste
@@ -682,11 +809,14 @@ async function demarrer() {
   // 🔴 LE MOTEUR TOURNE ICI. On ne l'attend pas : le référentiel pèse 848 Ko et
   // l'app doit être utilisable pendant ce temps (l'écran affiche son squelette).
   // Une erreur du moteur ne doit JAMAIS emporter la coquille avec elle.
-  afficherProgramme().catch(() => {}); // erreur déjà rendue dans l'écran (programme.js)
+  //
+  // L'écran de séance consomme le MÊME résultat : on ne fait pas tourner le
+  // moteur deux fois pour afficher deux vues du même programme.
+  afficherProgramme()
+    .then((resultat) => initSeance(resultat))
+    .catch(() => initSeance(null)); // l'erreur est déjà rendue dans l'écran (programme.js)
 
-  await Promise.all([rendreStockage(), rendreQuota(), rendreSauvegarde(), rendreProfil()]);
-  rendreChrono();
-  if (lireChrono().actif) lancerBoucle();
+  await Promise.all([rendreStockage(), rendreQuota(), rendreSauvegarde(), rendreProfil(), rendreCible()]);
 
   if ((await etatSauvegarde()).jamais) {
     $('#txt-sauvegarde').textContent = `Tu n'as jamais exporté tes données. Fais-le au moins tous les ${SEUIL_RAPPEL_JOURS} jours.`;

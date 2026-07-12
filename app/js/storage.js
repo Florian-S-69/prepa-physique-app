@@ -28,7 +28,12 @@ export async function estPersistant() {
   if (!dispo() || !navigator.storage.persisted) return null;
   try {
     return await navigator.storage.persisted();
-  } catch {
+  } catch (e) {
+    // ⚠️ `null` n'est PAS `false` : « je ne sais pas » ≠ « non protégé ». L'écran
+    // affiche « Impossible à vérifier » et pousse à l'export — c'est le bon
+    // comportement. Mais on ne jette pas la CAUSE : un `catch {}` nu efface la
+    // seule piste qu'on aura le jour où quelqu'un perd ses séances.
+    console.warn('[storage] persisted() a échoué :', e);
     return null;
   }
 }
@@ -79,7 +84,8 @@ export async function estimerQuota() {
   try {
     const { usage = 0, quota = 0 } = await navigator.storage.estimate();
     return { utilise: usage, quota, pct: quota > 0 ? (usage / quota) * 100 : 0 };
-  } catch {
+  } catch (e) {
+    console.warn('[storage] estimate() a échoué :', e);
     return null;
   }
 }

@@ -1,91 +1,58 @@
 /**
- * programme.js — le premier écran RÉEL. Le moteur y devient visible.
+ * programme.js — l'onglet Programme. Un ÉCRAN, pas un article.
  *
- * ── Ce que cet écran doit prouver ───────────────────────────────────────
- * 1. Le moteur tourne **dans le navigateur**, sur les **vraies** données de
- *    l'utilisateur sorties d'IndexedDB. Aucun rendu pré-calculé, aucun Markdown
- *    d'`out/`, aucune donnée en dur.
- * 2. **Les adaptations liées aux limitations sont VISIBLES.** C'est le cœur
- *    du produit : quand une limitation d'épaule est ACTIVE, le moteur retire la
- *    poussée verticale, substitue le développé couché vers la Smith, plafonne
- *    le curl, relève le RIR, impose l'échauffement et renvoie vers un pro —
- *    **en expliquant pourquoi**. Ce « pourquoi » n'est pas une note de bas
- *    de page : c'est le produit. Il est donc en HAUT, avant les exercices.
- * 3. **Honnêteté de l'affichage.** Ses charges en barre libre sont des
- *    ESTIMATIONS PRUDENTES, pas des mesures. Elles portent le « ~ »,
- *    l'arrondi grossier, aucun accent, et un « Pourquoi ? » obligatoire
- *    (voir valeurs.js). Un estimé peint comme un mesuré est un mensonge.
+ * ══════════════════════════════════════════════════════════════════════
+ * Ce qu'il répare
+ * ══════════════════════════════════════════════════════════════════════
+ * Cet écran faisait **7 656 px** — dix hauteurs d'iPhone. On y lisait, à plat et
+ * sans l'avoir demandé, une prose qui citait `(veille/18 §9.1, règle 2)` et
+ * « ≈ −16 % de risque relatif, extrapolé des sports collectifs » — **à un homme
+ * qui tient un haltère.** Un titre (« Ton programme ») annonçait le programme
+ * au-dessus du programme. Huit contrôles en tout, aucun avant le troisième écran.
  *
- * ── Ce que cet écran n'est PAS ──────────────────────────────────────────
- * Ce n'est pas le **log de séance** (le geste des 6×/semaine). La piste
- * design le refond en ce moment (bouton ancré, chrono armé au même tap).
- * On l'intégrera après. Ici, on LIT son programme ; on ne le logue pas.
+ *   > « Je veux une application qu'on utilise comme un OUTIL, pas comme un
+ *   >   INTERLOCUTEUR. L'intelligence de l'application doit se voir dans la
+ *   >   PERTINENCE de ce qu'elle affiche, pas dans la QUANTITÉ de messages
+ *   >   qu'elle envoie. »
  *
- * ── Rédaction des « Pourquoi ? » ────────────────────────────────────────
- * ⚠️ Aucun texte d'explication n'est écrit par l'app. **Tous** viennent du
- * moteur (`limitations.js`) ou du persona lui-même. L'app met en forme, elle
- * n'interprète pas — sinon les deux se mettraient à raconter deux histoires.
+ * ══════════════════════════════════════════════════════════════════════
+ * 🔴 LA RÈGLE : on retire la NARRATION, on garde l'ÉTAT.
+ * ══════════════════════════════════════════════════════════════════════
+ * **Aucune vérité n'est supprimée. Chacune est DÉPLACÉE derrière un tap.**
+ *
+ * Le mécanisme n'a pas été inventé ici : il existait **déjà**, à trois lignes de
+ * là — le « Pourquoi ? » des substitutions d'exercice. Il était bon. Il n'était
+ * simplement **appliqué nulle part ailleurs**. Le bloc d'échauffement, les règles
+ * du moteur, les signaux à surveiller, l'hypothèse clinique, le renvoi médical :
+ * tous se déversaient à plat. Ils passent tous derrière une **ligne d'état**
+ * (`ligneEtat`, ui.js) qui ouvre la **feuille** (`design/sheet.js`).
+ *
+ * Une ligne dit **ce qui est**. Le tap dit **pourquoi**. Rien ne se perd —
+ * et si une ligne n'ouvrait rien, ce serait le signe qu'on a supprimé au lieu
+ * de déplacer. **C'est la seule régression qui compte ici.**
+ *
+ * ── L'app ne dit plus « je » ──────────────────────────────────────────
+ * Elle ne dit pas non plus « le moteur ». Elle **montre un état**. La prose du
+ * moteur (`src/lib/`) n'est pas réécrite — elle est **hors périmètre** — mais
+ * elle n'est plus **déversée** : elle vit dans la feuille, mot pour mot,
+ * consultable. Structurée, la rigueur devient consultable au lieu d'être subie.
+ *
+ * ── Rédaction ─────────────────────────────────────────────────────────
+ * ⚠️ Aucune EXPLICATION n'est écrite par l'app. Toutes viennent du moteur
+ * (`limitations.js`) ou du persona. L'app **étiquette** et **met en forme** ;
+ * elle n'interprète pas — sinon les deux se mettraient à raconter deux histoires.
  */
 
-import { $, afficherEcran } from './ui.js';
+import {
+  $, afficherEcran, echapper, riche, el,
+  ouvrirFeuille, blocPourquoi, ligneEtat, SAIT, IGNORE,
+} from './ui.js';
 import { genererProgramme } from './moteur.js';
 import { chargeDepart, derive, mesureKg, NIVEAUX } from './valeurs.js';
-
-// ══════════════════════════════════════════════════════════════════════
-// Rendu de texte — le moteur écrit en Markdown léger
-// ══════════════════════════════════════════════════════════════════════
-
-const echapper = (s) =>
-  String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
-
-/**
- * Le moteur écrit `**gras**`, `` `code` `` et `_italique_` (il rend aussi du
- * Markdown en CLI). On échappe d'ABORD, on stylise ENSUITE : aucune chaîne du
- * moteur ne peut injecter de HTML.
- */
-const riche = (s) =>
-  echapper(s)
-    .replace(/\*\*(.+?)\*\*/g, '<b>$1</b>')
-    .replace(/`(.+?)`/g, '<code>$1</code>')
-    .replace(/_(.+?)_/g, '<i>$1</i>');
-
-/** Crée un élément. `html` passe par `riche()`, jamais par innerHTML brut. */
-function el(tag, classe, html) {
-  const n = document.createElement(tag);
-  if (classe) n.className = classe;
-  if (html != null) n.innerHTML = html;
-  return n;
-}
-
-/**
- * Le « Pourquoi ? » repliable — pattern du design system, en `<details>` natif :
- * accessible au clavier et au lecteur d'écran, zéro JS, zéro dépendance.
- *
- * @param {string} savoir    ce que je sais    (obligatoire)
- * @param {string} [ignore]  ce que je ne sais pas — OBLIGATOIRE dès qu'un ESTIMÉ
- *                           est en jeu (RECHERCHE-ux.md P21). C'est cette moitié-là
- *                           que Strava range dans son centre d'aide ; nous, on
- *                           l'affiche dans la carte.
- */
-function pourquoi(savoir, ignore) {
-  const d = el('details', 'why');
-  const s = el('summary', 'why-link');
-  s.append(el('span', 'why-mark', '?'), el('span', null, 'Pourquoi&nbsp;?'));
-  d.append(s);
-
-  const bloc = el('div', 'why-block');
-  const p1 = el('div', 'why-part');
-  p1.append(el('span', 'why-part-label', 'Ce que je sais'), el('p', null, riche(savoir)));
-  bloc.append(p1);
-
-  if (ignore) {
-    const p2 = el('div', 'why-part why-part--unknown');
-    p2.append(el('span', 'why-part-label', 'Ce que je ne sais pas'), el('p', null, riche(ignore)));
-    bloc.append(p2);
-  }
-  d.append(bloc);
-  return d;
-}
+// 🔴 Le moteur rend des DONNÉES pour ça : { type, gravite, titre, detail, source, cible }.
+// `cible.exercice` est ce qui permet d'accrocher une adaptation SOUS l'exercice concerné,
+// au lieu de l'empiler dans un mur en tête de page. Le contenant existait ; on s'en sert.
+import { adaptationsMuscuEnAvis, avisDepuisTexte } from '../../src/lib/avis.js';
 
 /** Une valeur typée par la taxonomie. Le « ~ » de l'estimé est posé par la CSS. */
 function valeur(niveau, texte, fort = false) {
@@ -96,148 +63,297 @@ function valeur(niveau, texte, fort = false) {
   return n;
 }
 
-// ══════════════════════════════════════════════════════════════════════
-// Bloc « Adaptations » — LE CŒUR
-// ══════════════════════════════════════════════════════════════════════
+/** Une liste à puces, telle que le moteur l'a écrite. */
+function puces(items, rendu = (x) => riche(String(x))) {
+  const ul = el('ul', 'puces');
+  for (const x of items) ul.append(el('li', null, rendu(x)));
+  return ul;
+}
 
-/** Chaque type d'action a son icône et son libellé. Ordre = gravité décroissante. */
-const TYPES = [
-  ['retraits', '⛔', 'Retiré', (a) => a.exercice, (a) => `Retiré de « ${a.seance} »`],
-  ['substitutions', '⇄', 'Remplacé', (a) => `${a.avant} → ${a.apres}`, (a) => `Dans « ${a.seance} »`],
-  ['plafonds', '🔒', 'Charge plafonnée', (a) => a.exercice, () => 'La charge ne monte plus'],
-  ['rir_ajustes', '↑', 'RIR relevé', (a) => a.exercice, (a) => `RIR ${a.avant} → ${a.apres}`],
-];
-
-function rendreAdaptations(l) {
-  const carte = el('section', 'carte adapt');
-  carte.append(
-    el('span', 'kicker', 'Ton programme n’est pas le programme nominal'),
-    el('h2', 'carte-titre adapt-titre', 'Adaptations liées à tes limitations'),
-  );
-
-  const zones = l.limitations.map((x) => `<b>${echapper(x.libelle)}</b> (${echapper(x.libelle_statut.split(' (')[0])})`);
-  carte.append(
-    el(
-      'p',
-      'carte-note',
-      `Le moteur a lu ${zones.length} limitation${zones.length > 1 ? 's' : ''} — ${zones.join(', ')} — et a <b>changé le programme</b> autour d’elles. Chaque changement dit pourquoi.`,
-    ),
-  );
-
-  // ── Alertes (ce qui ne peut pas attendre) ───────────────────────────
-  for (const a of l.alertes ?? []) carte.append(el('div', 'banner banner--error', `<span>${riche(a)}</span>`));
-
-  // ── Les changements, un par un ──────────────────────────────────────
-  const liste = el('ul', 'adapt-liste');
-
-  for (const [cle, icone, libelle, quoi, detail] of TYPES) {
-    for (const a of l[cle] ?? []) {
-      const li = el('li', 'adapt-item');
-      const tete = el('div', 'adapt-tete');
-      tete.append(
-        el('span', 'adapt-icone', icone),
-        el('div', 'adapt-quoi', `<span class="adapt-nom">${echapper(quoi(a))}</span><span class="adapt-detail">${echapper(detail(a))}</span>`),
-        el('span', 'tag', echapper(libelle)),
-      );
-      li.append(tete);
-      // Le « pourquoi » est celui du MOTEUR, mot pour mot.
-      li.append(pourquoi(a.pourquoi));
-      liste.append(li);
-    }
-  }
-
-  // Progression prudente — porte sur un pattern, pas sur un exercice nommé.
-  for (const p of l.progression_prudente ?? []) {
-    const li = el('li', 'adapt-item');
-    const tete = el('div', 'adapt-tete');
-    tete.append(
-      el('span', 'adapt-icone', '🐢'),
-      el('div', 'adapt-quoi', `<span class="adapt-nom">Pattern « ${echapper(p.patterns.join(', '))} »</span><span class="adapt-detail">Progression au plus petit palier</span>`),
-      el('span', 'tag', 'Prudent'),
-    );
-    li.append(tete, pourquoi(p.pourquoi));
-    liste.append(li);
-  }
-
-  if (liste.children.length) carte.append(liste);
-
-  // ── Échauffement imposé ─────────────────────────────────────────────
-  if (l.echauffement?.impose) {
-    const e = l.echauffement;
-    const bloc = el('div', 'adapt-bloc adapt-bloc--fort');
-    bloc.append(el('h3', 'adapt-sous-titre', '🔥 Échauffement — imposé, pas suggéré'));
-    bloc.append(el('p', 'carte-note', riche(e.constat)));
-    const ul = el('ul', 'puces');
-    for (const c of e.consignes) ul.append(el('li', null, riche(c)));
-    bloc.append(ul, pourquoi(e.pourquoi));
-    carte.append(bloc);
-  }
-
-  // ── Hypothèse clinique (le croisement stagnation × limitation) ───────
-  if (l.hypothese_clinique) {
-    const h = l.hypothese_clinique;
-    const bloc = el('div', 'adapt-bloc');
-    bloc.append(
-      el('h3', 'adapt-sous-titre', '🔍 Une hypothèse, pas un diagnostic'),
-      el('p', 'carte-note', riche(h.message)),
-      el('p', 'adapt-source', riche(h.source)),
-    );
-    carte.append(bloc);
-  }
-
-  // ── Renvoi vers un professionnel — jamais enterré ────────────────────
-  for (const r of l.renvois_pro ?? []) {
-    const bloc = el('div', 'adapt-bloc adapt-bloc--pro');
-    bloc.append(
-      el('h3', 'adapt-sous-titre', '🩺 Fais examiner ça'),
-      el('p', 'carte-note', riche(r.message)),
-    );
-    carte.append(bloc);
-  }
-
-  // ── Signaux à surveiller ────────────────────────────────────────────
-  if (l.surveiller?.length) {
-    const bloc = el('div', 'adapt-bloc');
-    bloc.append(el('h3', 'adapt-sous-titre', '👀 Les signaux qui doivent te faire lever le pied'));
-    const ul = el('ul', 'puces');
-    for (const s of l.surveiller) ul.append(el('li', null, `<b>${echapper(s.libelle)}</b> — ${riche(s.signal)}`));
-    bloc.append(ul);
-    carte.append(bloc);
-  }
-
-  // ── Règles du programme ─────────────────────────────────────────────
-  if (l.regles?.length) {
-    const bloc = el('div', 'adapt-bloc');
-    bloc.append(el('h3', 'adapt-sous-titre', '📐 Les règles que le moteur s’impose'));
-    const ul = el('ul', 'puces');
-    for (const r of l.regles) ul.append(el('li', null, riche(r)));
-    bloc.append(ul);
-    carte.append(bloc);
-  }
-
-  // ── 🔴 Ce que le moteur N'A PAS su faire — jamais silencieux ──────────
-  if (l.non_appliquees?.length) {
-    const bloc = el('div', 'adapt-bloc adapt-bloc--fort');
-    bloc.append(el('h3', 'adapt-sous-titre', '⚠️ Ce que le moteur n’a pas su adapter'));
-    const ul = el('ul', 'puces');
-    for (const n of l.non_appliquees) ul.append(el('li', null, riche(n.message ?? n.pourquoi ?? String(n))));
-    bloc.append(ul);
-    carte.append(bloc);
-  }
-
-  return carte;
+/** Ouvre la feuille sur un contenu libre. Le « pourquoi » y vit ; il n'est plus déversé. */
+function feuille(titre, corps, { sous = null, fermer = 'Fermer' } = {}) {
+  ouvrirFeuille({ titre, sous, corps, fermer });
 }
 
 // ══════════════════════════════════════════════════════════════════════
-// Une séance : la liste d'exercices
+// LES LIGNES D'ÉTAT — ce que le moteur a à dire, une ligne chacune
 // ══════════════════════════════════════════════════════════════════════
 
 /**
- * @param notesRef  nom d'exercice → note de `charges_reference` (le persona explique
- *                  LUI-MÊME pourquoi telle charge est une estimation). C'est notre
- *                  meilleure matière pour « ce que je ne sais pas ».
+ * Ce qui doit se voir SANS scroller : la sécurité. Le reste attend plus bas.
+ *
+ * ⚠️ Ces lignes ne sont pas décoratives. Le renvoi médical et l'échauffement imposé
+ * sont des garde-fous (`philosophy.md`, règle 3) : ils restent **au-dessus** du
+ * sélecteur de jour. Ce qui change, c'est qu'ils tiennent en **une ligne** — leur
+ * contenu, intact, est dans la feuille.
  */
-function rendreExercice(exo, notesRef) {
+/**
+ * 🔴 LES ALERTES RÉPÈTENT LES BLOCS — ET ELLES SONT LES SEULES À PORTER CERTAINS FAITS.
+ *
+ * L'alerte d'échauffement résume le bloc d'échauffement. L'alerte « 🚑 renvoi » résume le
+ * bloc de renvoi (elle dit même « voir le bloc en tête de programme »). Les afficher **en
+ * plus** des blocs, c'était **dire deux fois la même chose** — et c'est comme ça qu'un écran
+ * finit à 7 656 px.
+ *
+ * Mais les supprimer serait pire : **vérifié à l'écran**, elles sont les SEULES à porter
+ * « ≈ −16 % de risque relatif », « extrapolé des sports collectifs », `veille/18 §9.1`,
+ * « NON SKIPPABLE » et « Aucun échauffement ne gère ces signaux ». Le bloc d'échauffement,
+ * lui, dit « l'effet mesuré est modeste (**voir ci-dessous**) » — et ce « ci-dessous »
+ * ne menait nulle part.
+ *
+ * → On les **RANGE** dans la feuille du bloc qu'elles résument. Une ligne de moins à
+ *   l'écran, pas un mot de moins dans l'app.
+ *
+ * ⚠️ Le rattachement se fait sur un mot du message : c'est **fragile**, et c'est assumé —
+ * parce que l'échec est **sûr**. Une alerte qu'on ne sait pas rattacher **garde sa propre
+ * ligne** (voir `restantes`). Elle peut faire doublon ; elle ne peut pas **disparaître**.
+ */
+export function rangerAlertes(l) {
+  const pour = { echauffement: [], renvoi: [] };
+  const restantes = [];
+  for (const a of l?.alertes ?? []) {
+    // ⚠️ Le renvoi D'ABORD : son message contient « Aucun échauffement ne gère ces
+    //    signaux » — testé sur l'échauffement en premier, il tomberait dans la mauvaise
+    //    feuille. L'ordre de ces deux lignes est le correctif.
+    if (l?.renvois_pro?.length && /professionnel de santé/i.test(a)) pour.renvoi.push(a);
+    else if (l?.echauffement?.impose && /échauff/i.test(a)) pour.echauffement.push(a);
+    else restantes.push(a);
+  }
+  return { pour, restantes };
+}
+
+function rendreAvisHaut(p) {
+  const l = p.limitations;
+  const zone = el('div', 'lignes-etat');
+  const { pour, restantes } = rangerAlertes(l);
+
+  // 🩺 Renvoi vers un professionnel — le plus grave, et jamais enterré.
+  for (const r of l?.renvois_pro ?? []) {
+    zone.append(ligneEtat({
+      icone: '🩺',
+      texte: `**${echapper(r.libelle)}** — à faire examiner`,
+      gravite: 'critique',
+      faire: () => feuille(
+        'À faire examiner',
+        blocPourquoi([
+          { label: 'Pourquoi', texte: r.message },
+          ...pour.renvoi.map((a) => ({ label: 'Alerte du moteur', texte: a, sourdine: true })),
+        ]),
+      ),
+    }));
+  }
+
+  // 🔥 Échauffement imposé — un état (imposé), pas un plaidoyer de six paragraphes.
+  const e = l?.echauffement;
+  if (e?.impose) {
+    zone.append(ligneEtat({
+      icone: '🔥',
+      texte: `Échauffement **imposé** — ${(e.consignes ?? []).length} consignes`,
+      gravite: 'alerte',
+      go: 'Voir',
+      faire: () => {
+        const corps = el('div', 'why-block');
+        const part = el('div', 'why-part');
+        part.append(el('span', 'why-part-label', 'Les consignes'), puces(e.consignes ?? []));
+        corps.append(part);
+        // Le constat, le « pourquoi » et l'alerte du moteur — mot pour mot, derrière le
+        // tap. Plus jamais à plat sur l'écran d'un homme qui tient un haltère.
+        corps.append(...blocPourquoi([
+          { label: SAIT, texte: e.constat },
+          { label: 'Pourquoi imposé', texte: e.pourquoi, sourdine: true },
+          ...pour.echauffement.map((a) => ({ label: 'Ce que ça vaut, honnêtement', texte: a, sourdine: true })),
+        ]).children);
+        feuille('Échauffement imposé', corps);
+      },
+    }));
+  }
+
+  // ⚠️ Les alertes qu'on n'a PAS su rattacher. Elles gardent leur ligne — le filet.
+  //    `avisDepuisTexte` sépare l'essentiel du pourquoi ; la feuille rend le message
+  //    d'ORIGINE, intact (`markdown`) : le découpage mécanique ne peut pas amputer.
+  for (const brut of restantes) {
+    const a = avisDepuisTexte(brut);
+    if (!a) continue;
+    zone.append(ligneEtat({
+      icone: '⚠️',
+      texte: a.titre,
+      gravite: 'alerte',
+      faire: () => feuille(
+        'Alerte',
+        blocPourquoi([{ label: 'Le message, en entier', texte: a.markdown }]),
+      ),
+    }));
+  }
+
+  // ⚠️ Ce qui n'a PAS pu être adapté — jamais silencieux, jamais supprimé.
+  if (l?.non_appliquees?.length) {
+    const n = l.non_appliquees;
+    zone.append(ligneEtat({
+      icone: '⚠️',
+      texte: `**${n.length}** limitation${n.length > 1 ? 's' : ''} sans adaptation`,
+      gravite: 'alerte',
+      go: 'Voir',
+      faire: () => {
+        const corps = el('div', 'why-block');
+        const part = el('div', 'why-part why-part--unknown');
+        part.append(
+          el('span', 'why-part-label', "Ce qui n'a pas pu être adapté"),
+          puces(n, (x) => riche(x.message ?? x.pourquoi ?? String(x))),
+        );
+        corps.append(part);
+        feuille('Sans adaptation', corps);
+      },
+    }));
+  }
+
+  return zone.children.length ? zone : null;
+}
+
+/**
+ * La matière de référence : vraie, utile, et dont on n'a **pas** besoin maintenant.
+ * Elle vit en bas de l'écran, une ligne chacune. Elle ne se déverse plus.
+ */
+function rendreAvisBas(p, persona) {
+  const l = p.limitations;
+  const zone = el('div', 'lignes-etat lignes-etat--bas');
+
+  // 🔍 L'hypothèse clinique (stagnation × limitation).
+  const h = l?.hypothese_clinique;
+  if (h) {
+    zone.append(ligneEtat({
+      icone: '🔍',
+      texte: 'Une hypothèse, pas un diagnostic',
+      faire: () => {
+        const corps = blocPourquoi([{ label: "L'hypothèse", texte: h.message, sourdine: true }]);
+        if (h.source) corps.append(el('p', 'sc-source', echapper(h.source)));
+        feuille('Une hypothèse, pas un diagnostic', corps);
+      },
+    }));
+  }
+
+  // 👀 Les signaux qui doivent faire lever le pied.
+  if (l?.surveiller?.length) {
+    zone.append(ligneEtat({
+      icone: '👀',
+      texte: `**${l.surveiller.length}** signaux à surveiller`,
+      go: 'Voir',
+      faire: () => {
+        const corps = el('div', 'why-block');
+        const part = el('div', 'why-part');
+        part.append(
+          el('span', 'why-part-label', 'Lever le pied si'),
+          puces(l.surveiller, (s) => `<b>${echapper(s.libelle)}</b> — ${riche(s.signal)}`),
+        );
+        corps.append(part);
+        feuille('Signaux à surveiller', corps);
+      },
+    }));
+  }
+
+  // 📐 Les règles du programme. (Elles disaient « les règles que LE MOTEUR s'impose ».)
+  if (l?.regles?.length) {
+    zone.append(ligneEtat({
+      icone: '📐',
+      texte: `**${l.regles.length}** règles sur ce programme`,
+      go: 'Voir',
+      faire: () => {
+        const corps = el('div', 'why-block');
+        const part = el('div', 'why-part');
+        part.append(el('span', 'why-part-label', 'Les règles'), puces(l.regles));
+        corps.append(part);
+        feuille('Règles du programme', corps);
+      },
+    }));
+  }
+
+  // 📦 Les charges de référence mises de côté — la donnée n'est pas perdue, et on le montre.
+  if (p.charges_non_appliquees?.length) {
+    const c = p.charges_non_appliquees;
+    zone.append(ligneEtat({
+      icone: '📦',
+      texte: `**${c.length}** charge${c.length > 1 ? 's' : ''} mise${c.length > 1 ? 's' : ''} de côté`,
+      go: 'Voir',
+      faire: () => {
+        const corps = el('div', 'why-block');
+        const part = el('div', 'why-part');
+        part.append(
+          el('span', 'why-part-label', 'Conservées, pas appliquées'),
+          puces(c, (x) => riche(x.message)),
+        );
+        corps.append(part);
+        feuille('Charges mises de côté', corps);
+      },
+    }));
+  }
+
+  // ❓ Sur quoi ce programme repose — les hypothèses, et la raison du split.
+  const hyps = [...(p.hypotheses_programme ?? []), ...(persona.hypotheses ?? [])];
+  if (hyps.length || p.note_split) {
+    zone.append(ligneEtat({
+      icone: '❓',
+      texte: 'Sur quoi ce programme repose',
+      go: 'Voir',
+      faire: () => {
+        const corps = el('div', 'why-block');
+        if (p.note_split) {
+          // La note du split vivait à plat, sous le titre. C'est une explication :
+          // elle rejoint les autres, derrière le tap.
+          const s = el('div', 'why-part');
+          s.append(el('span', 'why-part-label', 'Le split'), el('p', null, riche(p.note_split)));
+          corps.append(s);
+        }
+        if (hyps.length) {
+          const part = el('div', 'why-part why-part--unknown');
+          part.append(el('span', 'why-part-label', 'Hypothèses — à confirmer'), puces(hyps));
+          corps.append(part);
+        }
+        feuille('Sur quoi ce programme repose', corps);
+      },
+    }));
+  }
+
+  return zone.children.length ? zone : null;
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// Un exercice
+// ══════════════════════════════════════════════════════════════════════
+
+/** Les avis du moteur qui concernent CET exercice. L'app filtre, elle ne parse pas. */
+const avisDe = (exo, avis) =>
+  avis.filter(
+    (a) =>
+      a.cible?.exercice === exo.nom ||
+      a.cible?.remplace === exo.nom ||
+      (a.cible?.pattern && a.cible.pattern === exo.pattern && !a.cible.exercice),
+  );
+
+/** La feuille d'un exercice : tout ce que le moteur a changé, et pourquoi. */
+function montrerAvisExo(exo, siens) {
+  const corps = el('div', 'sc-avis-liste');
+  for (const a of siens) {
+    const bloc = el('div', 'why-block');
+    const p1 = el('div', 'why-part');
+    // ⚠️ « Ce que LE MOTEUR a fait » — l'app parlait d'elle-même jusque dans ses
+    // étiquettes. L'état se nomme ; il ne se raconte pas.
+    p1.append(el('span', 'why-part-label', 'Ce qui a changé'), el('p', null, riche(a.titre)));
+    bloc.append(p1);
+    if (a.detail) {
+      const p2 = el('div', 'why-part why-part--unknown');
+      p2.append(el('span', 'why-part-label', 'Pourquoi'), el('p', null, riche(a.detail)));
+      bloc.append(p2);
+    }
+    if (a.source) bloc.append(el('p', 'sc-source', echapper(a.source)));
+    corps.append(bloc);
+  }
+  feuille(exo.nom, corps);
+}
+
+/**
+ * @param notesRef  nom d'exercice → note de `charges_reference` (le persona explique
+ *                  LUI-MÊME pourquoi telle charge est une estimation).
+ */
+function rendreExercice(exo, notesRef, avis) {
   const li = el('li', 'exo');
 
   // ── Titre + badges ──────────────────────────────────────────────────
@@ -264,63 +380,111 @@ function rendreExercice(exo, notesRef) {
   li.append(presc);
 
   // ── LA CHARGE — le point d'honnêteté ────────────────────────────────
+  // L'ÉTAT reste (estimée · mesurée · à établir), et il se VOIT. C'est sa mise en
+  // MOTS qui passe derrière le « ? ». Un champ sans valeur affiche « à établir » ;
+  // il ne dit pas « le moteur ne connaît pas ta charge ».
   const { niveau, texte } = chargeDepart(exo);
   const ligne = el('div', 'exo-charge');
+  ligne.append(el('span', 'exo-charge-lab', 'Charge de départ'));
+
+  const source = exo.substitue_depuis ?? exo.nom;
+  let parts = null;
 
   if (niveau === 'est') {
-    // 🔴 ESTIMÉ : « ~ » (posé par la CSS), arrondi à 5 kg, aucun accent,
-    //    « Pourquoi ? » OBLIGATOIRE. Cf. valeurs.js.
-    ligne.append(el('span', 'exo-charge-lab', 'Charge de départ'), valeur('est', texte));
-    ligne.append(el('span', 'tag tag--warn', 'Estimée, pas mesurée'));
-    li.append(ligne);
-    const source = exo.substitue_depuis ?? exo.nom;
-    li.append(
-      pourquoi(
-        `Cette charge est un **point de départ prudent**, pas une mesure. Le moteur a relevé ton **RIR à ${echapper(exo.rir)}** dessus : il ne prescrit pas du lourd à quasi-échec sur une charge qu'il n'a **pas mesurée**.`,
-        `${notesRef.get(source) ? `Ta propre note sur « ${source} » : _${notesRef.get(source)}_\n\n` : ''}` +
-          `**Ta vraie charge d'aujourd'hui, personne ne la connaît** — toi non plus, tu l'as déclarée « à re-tester ». Fais-en une **séance de re-test** : montée en charge progressive, 2–3 reps par palier, on s'arrête dès que la technique bouge. Une fois la charge réelle loguée, la prescription repartira du réel.`,
-      ),
-    );
+    // 🔴 ESTIMÉ : « ~ » (posé par la CSS), arrondi à 5 kg, aucun accent, « ? » obligatoire.
+    ligne.append(valeur('est', texte), el('span', 'tag tag--warn', 'Estimée, pas mesurée'));
+    parts = [
+      {
+        label: SAIT,
+        texte:
+          `Cette charge est un **point de départ prudent**, pas une mesure. Le **RIR est relevé à ${echapper(exo.rir)}** ` +
+          `en conséquence : pas de lourd à quasi-échec sur une charge qui n'a **pas été mesurée**.`,
+      },
+      {
+        label: IGNORE,
+        sourdine: true,
+        texte:
+          `${notesRef.get(source) ? `Ta propre note sur « ${source} » : _${notesRef.get(source)}_\n\n` : ''}` +
+          `**Ta vraie charge d'aujourd'hui, personne ne la connaît** — toi non plus, tu l'as déclarée « à re-tester ». ` +
+          `Fais-en une **séance de re-test** : montée en charge progressive, 2–3 reps par palier, on s'arrête dès que la ` +
+          `technique bouge. Une fois la charge réelle loguée, la prescription repart du réel.`,
+      },
+    ];
   } else if (niveau === 'mes') {
     // MESURÉ : c'est TA donnée, précision pleine. Seul niveau qui a droit à l'accent.
-    ligne.append(el('span', 'exo-charge-lab', 'Charge de départ'), valeur('mes', texte, true));
+    ligne.append(valeur('mes', texte, true));
     if (exo.plafond_charge && exo.charge_max_kg != null) {
       ligne.append(el('span', 'tag tag--warn', `🔒 Plafond ${mesureKg(exo.charge_max_kg)}`));
     }
-    li.append(ligne);
     if (exo.plafond_charge && exo.plafond_pourquoi) {
-      li.append(
-        pourquoi(
-          exo.plafond_pourquoi,
-          "Aucun seuil de charge « sûr » n'existe dans la littérature pour un tendon : le moteur **ne fabrique pas de chiffre**. Le plafond retenu est **ta** dernière charge tolérée — ta donnée, pas une valeur inventée.",
-        ),
-      );
+      parts = [
+        { label: 'Pourquoi ce plafond', texte: exo.plafond_pourquoi },
+        {
+          label: IGNORE,
+          sourdine: true,
+          texte:
+            "Aucun seuil de charge « sûr » n'existe dans la littérature pour un tendon : **aucun chiffre n'est fabriqué ici**. " +
+            "Le plafond retenu est **ta** dernière charge tolérée — ta donnée, pas une valeur inventée.",
+        },
+      ];
     }
   } else {
     // Pas de charge du tout : on le dit, on n'invente pas un nombre.
-    ligne.append(el('span', 'exo-charge-lab', 'Charge de départ'), el('span', 'exo-charge-vide', 'à établir'));
-    li.append(ligne);
+    ligne.append(el('span', 'exo-charge-vide', 'à établir'));
     if (exo.charge_a_confirmer) {
-      li.append(
-        pourquoi(
-          `Le moteur **n'affiche aucune charge** ici : il n'en a pas. ${
-            exo.substitue_depuis
-              ? `« ${echapper(exo.substitue_depuis)} » a été remplacé par cet exercice, et ta charge de référence ne s'y transporte pas telle quelle (mouvement différent).`
-              : "Tu n'as pas déclaré de charge de référence sur cet exercice."
-          } Ton RIR est relevé à **${echapper(exo.rir)}** en attendant.`,
-          "Inventer un chiffre plausible serait la pire option : tu le suivrais. Première séance = **séance de calibration**. Monte progressivement, arrête-toi quand la technique bouge, et logue ce que tu as réellement fait.",
-        ),
-      );
+      parts = [
+        {
+          label: IGNORE,
+          sourdine: true,
+          texte:
+            `**Aucune charge n'est affichée ici : il n'y en a pas.** ${
+              exo.substitue_depuis
+                ? `« ${echapper(exo.substitue_depuis)} » a été remplacé par cet exercice, et ta charge de référence ne s'y transporte pas telle quelle (mouvement différent).`
+                : "Tu n'as pas déclaré de charge de référence sur cet exercice."
+            } Ton RIR est relevé à **${echapper(exo.rir)}** en attendant.`,
+        },
+        {
+          label: 'Ce qu’il faut faire',
+          texte:
+            'Inventer un chiffre plausible serait la pire option : tu le suivrais. Première séance = **séance de ' +
+            'calibration**. Monte progressivement, arrête-toi quand la technique bouge, et logue ce que tu as ' +
+            'réellement fait.',
+        },
+      ];
     }
   }
 
-  // ── Substitution : le pourquoi du moteur, à sa place ─────────────────
-  if (exo.substitue_depuis && exo._pourquoi_subst) {
-    li.append(pourquoi(`Tu devais faire « **${exo.substitue_depuis}** ». ${exo._pourquoi_subst}`));
+  // Le « ? » — la vérité est là, en un tap. Pas de pavé, pas d'accordéon.
+  if (parts) {
+    const q = el('button', 'exo-why');
+    q.type = 'button';
+    q.setAttribute('aria-label', `Pourquoi cette charge sur ${exo.nom} ?`);
+    q.append(el('span', 'why-mark', '?'));
+    q.addEventListener('click', () => feuille(exo.nom, blocPourquoi(parts), { sous: 'Charge de départ' }));
+    ligne.append(q);
+  }
+  li.append(ligne);
+
+  // ── Ce que le moteur a changé sur CET exercice — une ligne, un tap ───
+  // C'est ce que `avis.js` rend possible : `cible.exercice` accroche l'adaptation
+  // sous l'exercice concerné. Les 14 adaptations ne s'empilent plus en tête de page.
+  const siens = avisDe(exo, avis);
+  if (siens.length) {
+    const chip = el('button', 'sc-avis');
+    chip.type = 'button';
+    chip.append(
+      el('span', 'sc-avis-icone', '⚠️'),
+      el('span', null, `<b>Modifié</b> — ${siens.length} adaptation${siens.length > 1 ? 's' : ''}`),
+      el('span', 'sc-avis-go', 'Pourquoi ?'),
+    );
+    chip.addEventListener('click', () => montrerAvisExo(exo, siens));
+    li.append(chip);
   }
 
   if (exo.consigne) li.append(el('p', 'exo-consigne', `💡 ${echapper(exo.consigne)}`));
-  if (exo.alternative) li.append(el('p', 'exo-alt', `Machine prise ? → <b>${echapper(exo.alternative)}</b>`));
+  // ⚠️ « Machine prise ? → X » posait une QUESTION. Un écran ne t'interroge pas :
+  //    il nomme l'état. La donnée (l'alternative) est identique.
+  if (exo.alternative) li.append(el('p', 'exo-alt', `Alternative · <b>${echapper(exo.alternative)}</b>`));
 
   return li;
 }
@@ -329,11 +493,11 @@ function rendreExercice(exo, notesRef) {
 // L'écran
 // ══════════════════════════════════════════════════════════════════════
 
-let etat = null; // { persona, programme, jour }
+let etat = null; // { persona, programme, notesRef, avis, jour }
 
 function rendreJour(i) {
   etat.jour = i;
-  const { programme: p } = etat;
+  const { programme: p, avis } = etat;
   const seance = p.seances[i];
 
   for (const b of document.querySelectorAll('.jour-btn')) {
@@ -346,8 +510,8 @@ function rendreJour(i) {
   hote.replaceChildren();
   hote.append(el('h2', 'seance-nom', echapper(seance.nom)));
 
-  // Trois chiffres de tête, pas quatre (RECHERCHE-ux.md P1). Tous DÉRIVÉS :
-  // ce sont des sommes exactes sur le programme, pas des modèles.
+  // Trois chiffres de tête, pas quatre. Tous DÉRIVÉS : des sommes exactes sur le
+  // programme, pas des modèles.
   const series = seance.exercices.reduce((n, e) => n + e.series, 0);
   const stats = el('div', 'seance-stats');
   for (const [v, lab] of [
@@ -361,49 +525,175 @@ function rendreJour(i) {
   }
   hote.append(stats);
 
+  // ⛔ Un exercice RETIRÉ de cette séance n'a plus de carte où vivre — et c'est
+  // précisément le genre de vérité qui disparaîtrait sans qu'on s'en aperçoive.
+  // Il garde sa ligne, ici, dans la séance dont il a été retiré.
+  const retires = (etat.programme.limitations?.retraits ?? []).filter((r) => r.seance === seance.nom);
+  if (retires.length) {
+    const zone = el('div', 'lignes-etat');
+    for (const r of retires) {
+      zone.append(ligneEtat({
+        icone: '⛔',
+        texte: `**${r.exercice}** — retiré de cette séance`,
+        gravite: 'alerte',
+        faire: () => feuille(r.exercice, blocPourquoi([{ label: 'Pourquoi retiré', texte: r.pourquoi }]), {
+          sous: 'Retiré du programme',
+        }),
+      }));
+    }
+    hote.append(zone);
+  }
+
   const ul = el('ul', 'exos');
-  for (const exo of seance.exercices) ul.append(rendreExercice(exo, etat.notesRef));
+  for (const exo of seance.exercices) ul.append(rendreExercice(exo, etat.notesRef, avis));
   hote.append(ul);
 }
 
+// ══════════════════════════════════════════════════════════════════════
+// 🔴 LA CIBLE — l'ÉTAT, pas la NARRATION
+// ══════════════════════════════════════════════════════════════════════
+//
+// > *« 100 kg au développé couché » ne veut rien dire sans savoir qu'on est à 80.*
+//
+// Le **record** est le dénominateur ; l'**écart** est la seule chose actionnable. Les deux sont
+// **mesurés** — ils sortent du carnet (`records.js`), jamais d'un modèle et jamais du persona.
+//
+// ⚠️ **Ce qui n'est pas mesurable affiche `—`.** Pas une phrase, pas une estimation, pas un « tu
+// y seras en 12 semaines ». Un chiffre plausible serait la pire des réponses : **il le suivrait.**
+// La raison, elle, ne disparaît pas — elle attend **derrière le tap** (`cible.pourquoi`, écrit
+// par le moteur).
+function rendreCible(cible) {
+  if (!cible) return null; // aucune cible = aucune ligne. Le silence est un état valide.
+
+  const zone = el('div', 'lignes-etat');
+  const kg = (v) => `${String(v).replace('.', ',')} kg`;
+
+  // L'écart : une SOUSTRACTION entre deux faits. Jamais une projection.
+  const etatTexte = () => {
+    if (cible.statut === 'REFUSE') return `**${echapper(cible.exercice ?? 'Objectif')}** — objectif refusé`;
+    if (cible.atteint) return `**${echapper(cible.exercice)}** — 🎯 cible atteinte (${kg(cible.charge_cible_kg)})`;
+
+    const record = cible.record;
+    // 🔴 LE `0 kg` NE PEUT PAS SORTIR : `au_poids_du_corps` l'interdit, le record est en REPS.
+    const recordTxt = !record
+      ? '—'
+      : record.au_poids_du_corps
+        ? `${record.reps} reps`
+        : `${kg(record.charge_kg)} × ${record.reps}`;
+    const ecartTxt = cible.ecart_kg == null ? '—' : `+${kg(cible.ecart_kg)}`;
+
+    return (
+      `**${echapper(cible.exercice)}** → **${kg(cible.charge_cible_kg)}** · ` +
+      `record ${recordTxt} · écart ${ecartTxt}`
+    );
+  };
+
+  zone.append(ligneEtat({
+    icone: cible.statut === 'REFUSE' ? '⛔' : cible.atteint ? '🎯' : '🎯',
+    texte: etatTexte(),
+    // Le vocabulaire de gravité existe déjà (`ligne-etat--critique` / `--alerte`) : on l'emploie,
+    // on n'en invente pas un troisième que la CSS ne connaîtrait pas.
+    gravite: cible.statut === 'REFUSE' ? 'critique' : cible.statut === 'ADAPTE' ? 'alerte' : 'info',
+    faire: () => {
+      const parts = [];
+
+      if (cible.record) {
+        parts.push({
+          label: SAIT,
+          texte:
+            `Ton record sur **${cible.exercice}** : ` +
+            (cible.record.au_poids_du_corps
+              ? `**${cible.record.reps} reps au poids du corps**, le ${cible.record.date}.`
+              : `**${kg(cible.record.charge_kg)} × ${cible.record.reps}**, le ${cible.record.date}.`) +
+            `\n\nIl n'est **pas saisi** : il est **DÉRIVÉ de ton carnet** — la meilleure série qu'il ait vue, ` +
+            `au sens de la **double progression** (la charge d'abord ; à charge égale, les reps). C'est l'ordre ` +
+            `que ton programme te demande de suivre : **battre ton record, c'est littéralement faire ce qu'il ` +
+            `prescrit.**`,
+        });
+      }
+
+      // La progression : MESURÉE, ou `—`. Il n'y a pas de troisième porte.
+      parts.push(
+        cible.progression
+          ? {
+              label: 'Progression mesurée',
+              texte:
+                `**${cible.progression.delta_kg >= 0 ? '+' : ''}${kg(cible.progression.delta_kg)}** sur ` +
+                `**${cible.progression.semaines} semaines** (${cible.progression.seances} séances, ` +
+                `du ${cible.progression.depuis} au ${cible.progression.jusqua}).\n\n` +
+                `⚠️ **C'est ce qui a été MESURÉ — ce n'est pas une prévision.** Le moteur ne l'extrapole pas : ` +
+                `il ne te dira **jamais** « à ce rythme, tu y seras en N semaines ». Une progression passée n'est ` +
+                `pas une promesse d'avenir, et un chiffre plausible serait la pire des réponses — **tu le suivrais.**`,
+            }
+          : {
+              label: IGNORE,
+              sourdine: true,
+              texte:
+                `**Progression : —.** Le carnet n'a pas encore de quoi la **mesurer** (il faut au moins 3 séances ` +
+                `de cet exercice, étalées sur au moins une semaine).\n\n` +
+                `Le moteur **n'estime pas** ce qu'il ne peut pas mesurer. **Il affiche un tiret, et il continue de compter.**`,
+            },
+      );
+
+      // Le POURQUOI du moteur : refus, adaptation, aveu. L'app ne l'écrit pas — elle le rend.
+      for (const p of cible.pourquoi ?? []) {
+        parts.push({ label: cible.statut === 'REFUSE' ? 'Refus du moteur' : 'Ce que ça change', texte: p });
+      }
+
+      feuille(
+        cible.statut === 'REFUSE' ? 'Objectif refusé' : 'Ton objectif',
+        blocPourquoi(parts),
+        { sous: cible.echeance ? `Échéance : ${cible.echeance}` : null },
+      );
+    },
+  }));
+
+  return zone;
+}
+
 function rendre() {
-  const { persona, programme: p } = etat;
+  const { persona, programme: p, cible } = etat;
   const hote = $('#prog');
   hote.replaceChildren();
 
   // ── En-tête ─────────────────────────────────────────────────────────
-  const tete = el('section', 'carte prog-tete');
+  // Le split, et rien qui l'annonce. « Ton programme » posé au-dessus du programme
+  // était du texte qui explique ce qu'on voit déjà — le premier signe de la pâte IA.
+  const tete = el('header', 'prog-tete');
   tete.append(
     el('span', 'kicker', `Muscu · ${echapper(p.objectif)} · ${echapper(p.niveau)}`),
-    el('h2', 'prog-split', echapper(p.split)),
-    el('p', 'carte-note', riche(p.note_split)),
+    el('h1', 'prog-split', echapper(p.split)),
   );
   hote.append(tete);
 
-  // ── 🔴 Les adaptations, AVANT les exercices ─────────────────────────
-  if (p.limitations?.limitations?.length) hote.append(rendreAdaptations(p.limitations));
+  // ── 🔴 La SÉCURITÉ, avant le sélecteur de jour. Une ligne chacune. ───
+  // ⚠️ **Et avant l'objectif.** Vérifié à l'écran : la ligne de cible s'était glissée AU-DESSUS du
+  // renvoi médical (« épaule droite — à faire examiner »). Un objectif chiffré qui passe devant un
+  // garde-fou de santé, c'est la hiérarchie du produit à l'envers (`philosophy.md` §3). La cible est
+  // importante ; elle n'est pas plus importante qu'une épaule à faire examiner.
+  const haut = rendreAvisHaut(p);
+  if (haut) hote.append(haut);
 
-  // ── Charges de référence non appliquées (la donnée n'est pas perdue) ─
-  if (p.charges_non_appliquees?.length) {
-    const c = el('section', 'carte');
-    c.append(el('h2', 'carte-titre', 'Tes charges mises de côté'));
-    const ul = el('ul', 'puces');
-    for (const x of p.charges_non_appliquees) ul.append(el('li', null, riche(x.message)));
-    c.append(ul);
-    hote.append(c);
-  }
+  // ── 🎯 L'OBJECTIF — le record, et l'écart. Une ligne, le reste derrière un tap. ──
+  const ligneCible = rendreCible(cible);
+  if (ligneCible) hote.append(ligneCible);
 
-  // ── Le sélecteur de jour ────────────────────────────────────────────
+  // ── Le sélecteur de jour — le CONTRÔLE, atteignable sans scroller ───
   const nav = el('nav', 'jours');
   nav.setAttribute('role', 'tablist');
   nav.setAttribute('aria-label', 'Jours du programme');
+  // 🔴 DU MARKDOWN BRUT s'affichait ici (« **Lundi** », « Legs 🦵 _(jambes lourdes)_ ») :
+  // quand l'utilisateur court, `jours` vient de `placement` (muscu.js), qui écrit du
+  // Markdown — comme partout, puisque le moteur rend aussi du Markdown en CLI. Cet écran
+  // l'échappait au lieu de le STYLISER. `riche()` échappe PUIS stylise : la protection
+  // contre l'injection est identique.
   p.jours.forEach((nom, i) => {
     const b = el('button', 'jour-btn');
     b.type = 'button';
     b.dataset.jour = String(i);
     b.setAttribute('role', 'tab');
     const [num, titre] = nom.split(' — ');
-    b.append(el('span', 'jour-num', echapper(num.replace('Jour ', 'J'))), el('span', 'jour-nom', echapper(titre ?? nom)));
+    b.append(el('span', 'jour-num', riche(num.replace('Jour ', 'J'))), el('span', 'jour-nom', riche(titre ?? nom)));
     b.addEventListener('click', () => rendreJour(i));
     nav.append(b);
   });
@@ -413,24 +703,9 @@ function rendre() {
   detail.id = 'seance-detail';
   hote.append(detail);
 
-  // ── Hypothèses du moteur — ce qu'il a supposé, pas ce qu'il sait ─────
-  if (p.hypotheses_programme?.length || persona.hypotheses?.length) {
-    const d = el('details', 'why why--bloc');
-    const s = el('summary', 'why-link');
-    s.append(el('span', 'why-mark', '?'), el('span', null, 'Sur quoi ce programme repose-t-il&nbsp;?'));
-    d.append(s);
-    const bloc = el('div', 'why-block');
-    const part = el('div', 'why-part why-part--unknown');
-    part.append(el('span', 'why-part-label', 'Hypothèses — à confirmer'));
-    const ul = el('ul', 'puces');
-    for (const h of [...(p.hypotheses_programme ?? []), ...(persona.hypotheses ?? [])]) {
-      ul.append(el('li', null, riche(h)));
-    }
-    part.append(ul);
-    bloc.append(part);
-    d.append(bloc);
-    hote.append(d);
-  }
+  // ── La matière de référence : vraie, utile, et pas maintenant ────────
+  const bas = rendreAvisBas(p, persona);
+  if (bas) hote.append(bas);
 
   hote.append(
     el(
@@ -452,7 +727,9 @@ function squelette() {
   sk.innerHTML =
     '<div class="sk sk-line sk-line--lg"></div><div class="sk sk-line sk-line--sm"></div>' +
     '<div class="sk sk-block"></div><div class="sk sk-block"></div><div class="sk sk-block"></div>';
-  z.append(sk, el('p', 'state-hint', '<span class="spinner"></span> Le moteur calcule ton programme…'));
+  // ⚠️ « Le moteur calcule ton programme… » — l'app parlait d'elle-même jusque dans
+  //    son écran d'attente. Un état, pas un narrateur.
+  z.append(sk, el('p', 'state-hint', '<span class="spinner"></span> Calcul du programme…'));
   z.hidden = false;
 }
 
@@ -463,9 +740,8 @@ function squelette() {
  * (voir amorce.js). Ce n'est pas une panne, c'est un utilisateur neuf — et le
  * dire avec un écran d'erreur rouge serait mentir sur ce qui se passe.
  *
- * Donc : pas de `state--error`, pas de `console.error`, pas de « Réessayer »
- * (réessayer quoi ? rien n'a échoué). Un accueil, et **une porte de sortie
- * praticable** : l'import, qui existe déjà. L'onboarding prendra sa place ici.
+ * ⚠️ Le titre disait « **Le moteur ne sait rien de toi** ». C'est l'app qui se
+ * met en scène pour annoncer un état vide. L'état, c'est : aucun profil.
  */
 function vide() {
   const z = $('#prog-etat');
@@ -473,11 +749,11 @@ function vide() {
 
   const d = el('div', 'state state--screen');
   d.append(
-    el('h2', 'state-title', 'Le moteur ne sait rien de toi'),
+    el('h2', 'state-title', 'Aucun profil sur cet appareil'),
     el(
       'p',
       'state-msg',
-      'Pas de profil sur cet appareil — donc pas de programme. C’est normal au premier démarrage : ' +
+      'Pas de profil, donc pas de programme. C’est normal au premier démarrage : ' +
         '<b>rien ne part d’ici, et rien n’y arrive tout seul.</b> Importe une sauvegarde pour retrouver tes données.',
     ),
   );
@@ -501,7 +777,7 @@ function erreur(e) {
   z.replaceChildren();
   const d = el('div', 'state state--screen state--error');
   d.append(
-    el('h2', 'state-title', 'Le moteur n’a pas pu générer ton programme'),
+    el('h2', 'state-title', 'Programme indisponible'),
     el('p', 'state-msg', echapper(e.message)),
   );
   const actions = el('div', 'state-actions');
@@ -528,28 +804,26 @@ export async function afficherProgramme() {
       vide();
       return null;
     }
-    const { persona, programme } = resultat;
+    // 🔴 `cible` et `records` viennent du MOTEUR (adaptation.js → objectif.js / records.js).
+    // L'app ne les recalcule pas : elle les AFFICHE. Deux calculs, deux vérités qui divergeraient.
+    const { persona, programme, cible } = resultat;
 
     // Le persona explique lui-même pourquoi telle charge est une estimation :
-    // on garde ses notes sous la main pour les « Pourquoi ? ».
+    // on garde ses notes sous la main pour les « ? ».
     const notesRef = new Map();
     for (const [nom, ref] of Object.entries(persona.muscu.charges_reference ?? {})) {
       if (ref?.note) notesRef.set(nom, ref.note);
     }
 
-    // Le « pourquoi » d'une substitution vit dans le rapport de limitations, pas
-    // sur l'exercice : on le raccroche pour l'afficher au bon endroit.
-    for (const s of programme.limitations?.substitutions ?? []) {
-      for (const seance of programme.seances) {
-        for (const e of seance.exercices) if (e.nom === s.apres) e._pourquoi_subst = s.pourquoi;
-      }
-    }
+    // Les adaptations, en DONNÉES. Chacune porte son exercice cible : elle s'affiche
+    // SOUS lui, au moment où on le regarde — pas dans un mur en tête de programme.
+    const avis = programme.limitations ? adaptationsMuscuEnAvis(programme.limitations) : [];
 
-    etat = { persona, programme, notesRef, jour: 0 };
+    etat = { persona, programme, notesRef, avis, cible, jour: 0 };
     $('#prog-etat').hidden = true;
     $('#prog-etat').replaceChildren();
     rendre();
-    return { persona, programme };
+    return { persona, programme, cible };
   } catch (e) {
     erreur(e);
     throw e;

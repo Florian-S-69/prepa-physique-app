@@ -15,6 +15,7 @@ import { MUSCLES_ACCESSOIRES, PROFILS_MATERIEL, suggererNoms } from "./exercices
 import { appliquerLimitations, appliquerLimitationsCourse } from "./limitations.js";
 import { echauffementSeance } from "./echauffement.js";
 import { composerSemaineMuscuHybride } from "./placement.js";
+import { avisDepuisTexte, adaptationsMuscuEnAvis, adaptationsCourseEnAvis } from "./avis.js";
 
 // Prescriptions par objectif (veille/02 §3 & §7 ; isométries en durée, veille/09).
 const PRESCRIPTIONS = {
@@ -405,6 +406,25 @@ function appliquerChargesReference(seances, chargesReference, referentiel, ecart
     // substitution). La donnée est bonne : la raison n'est ni un nom inconnu ni un split
     // inadapté — c'est une adaptation de sécurité, et il faut le dire comme tel.
     if (ecartes.has(nom)) {
+      // 🔴 LE TROU PRODUIT (2026-07-12) — « il a DONNÉ son chiffre, l'app lui demande de l'inventer ».
+      // Substitué (développé couché barre → Smith), l'exercice perdait TOUTE trace de la charge
+      // déclarée : l'écran de la première séance affichait « Prévu — » et « Charge inconnue » sur
+      // son mouvement principal, alors que le persona dit noir sur blanc « 80 kg × 8 ».
+      //
+      // ⚠️ On ne TRANSPOSE PAS : une charge guidée (Smith) n'égale pas une charge libre, et aucun
+      // coefficient de conversion n'est sourçable dans la veille. Inventer ce chiffre serait
+      // exactement la faute qu'on combat (« un faux chiffre migre ») — donc `charge_depart_kg`
+      // reste `null` et l'état « inconnue » RESTE.
+      //
+      // Ce qu'on rattache, c'est un REPÈRE : le chiffre qu'il a déclaré, SUR SON MOUVEMENT
+      // D'ORIGINE, nommé comme tel. C'est vrai, c'est utile, et c'est infiniment mieux que rien.
+      // Le moteur ne prescrit pas ; il rend à l'utilisateur ce que l'utilisateur lui a donné.
+      for (const s of seances) {
+        for (const e of s.exercices) {
+          if (e.substitue_depuis !== nom) continue;
+          e.repere_charge = { nom, charge_kg: ref.charge_kg, reps: ref.reps ?? null };
+        }
+      }
       nonAppliquees.push({
         nom,
         charge_kg: ref.charge_kg,
@@ -591,7 +611,7 @@ export function genererProgrammeMuscu(persona, referentiel) {
 
   // COURSE — le trou historique. `limitations` n'adaptait QUE la salle : un coureur qui déclarait
   // un genou douloureux voyait ses séances de muscu changer et ses SORTIES rester intactes. Un
-  // pratiquant de salle qui court (PPL 6 j + 1 course/sem) est exactement ce cas.
+  // pratiquant de salle qui court (le cas type : PPL 6 j + 1 course/sem) est exactement ce cas.
   // Les limitations sont TRANSVERSALES : elles sont maintenant appliquées ici aussi.
   const limitationsCourse = appliquerLimitationsCourse(persona);
 
@@ -694,6 +714,19 @@ export function genererProgrammeMuscu(persona, referentiel) {
 
   return {
     persona: persona.nom,
+    // 🔴 L'API DE DONNÉES (`avis.js`). **Le moteur rendait un DOCUMENT ; il rend désormais des
+    // DONNÉES.** Chaque adaptation porte son **exercice**, sa **séance**, sa **zone** et son
+    // **levier** — l'app peut donc afficher « **Développé militaire — RETIRÉ** » **sous l'exercice**,
+    // et garder le paragraphe sourcé **derrière un tap**. C'est ça, la différence entre un coach et
+    // un article de blog : **la même rigueur, servie au bon moment.**
+    mode: persona.mode ?? null,
+    avis: [
+      ...adaptationsMuscuEnAvis(limitations),
+      ...adaptationsCourseEnAvis(limitationsCourse),
+      ...alertes
+        .map((a) => avisDepuisTexte(a, { type: "alerte", gravite: a.includes("🔴") ? "critique" : "avertissement" }))
+        .filter(Boolean),
+    ],
     objectif: m.objectif,
     niveau: LIBELLES_NIVEAU[m.niveau] ?? m.niveau,
     materiel: m.materiel,
@@ -751,8 +784,29 @@ export function genererProgrammeMuscu(persona, referentiel) {
         : `Semaines 1–2 au volume plancher ci-dessous ; à partir de la semaine 3, +1 série/sem sur 1–2 muscles en retard **si** la récupération suit (perf stable, pas de RPE anormal) — progression du volume dans la fourchette ${cible.min}→${cible.max} (veille/02 §1).`,
       source: "veille/02 §1 & §4",
     },
+    // 🔴 LE DELOAD NE SE PRESCRIT PLUS AU CALENDRIER — et il n'aurait jamais dû.
+    //
+    // Cette règle disait « **Semaine 6 (fourchette 4–8)** », **en citant `veille/02 §5 & §7`**
+    // — c'est-à-dire les deux sections qui la **RÉFUTENT**, et depuis le 2026-07-11 :
+    //
+    //   §7 : « Deload : déclenché par des **MARQUEURS** de fatigue — **pas par le calendrier** :
+    //          le deload calendaire n'est **pas démontré** (§5). »
+    //   §5 : « le deload CALENDAIRE n'est pas démontré. […] privilégier le délestage **RÉACTIF**. »
+    //
+    // Le « 4–8 » lui-même n'était pas un résultat : c'était **5,6 ± 2,3 semaines**, soit la
+    // moyenne ± un écart-type d'un **SONDAGE DE PRATIQUES** (Rogerson 2024, 246 athlètes — dont
+    // les auteurs constatent eux-mêmes « un manque évident de recherche empirique »). Et le seul
+    // essai contrôlé (Coleman 2024, PeerJ) **ne trouve aucun bénéfice** : hypertrophie identique,
+    // force **en faveur du groupe continu**, aucune « re-sensibilisation ».
+    //
+    // ⚠️ **La veille s'était corrigée. Le produit ne l'avait pas suivie.** Une citation ne périme
+    // pas bruyamment — **elle cesse d'être vraie en silence**. (philosophy.md, règle 1.)
+    // Le garde-fou est dans `tests/deload.test.js` : il relit la source ET le moteur.
     deload: {
-      regle: "Semaine 6 (fourchette 4–8) OU dès signaux de fatigue (perf en baisse, RPE anormalement haut à charge égale) : volume −50 %, RIR 3–4, charges −10 %.",
+      regle:
+        "Deload déclenché par des SIGNAUX de fatigue, jamais par le calendrier : performance en baisse à charge égale, RPE anormalement haut, douleurs, sommeil dégradé. " +
+        "Contenu : volume −50 %, RIR 3–4, charges −10 % — on RÉDUIT le volume, on n'arrête pas. " +
+        "Un deload périodique fixe n'est pas démontré : le seul essai contrôlé ne lui trouve aucun bénéfice.",
       source: "veille/02 §5 & §7",
     },
     hybride: persona.running || persona.muscu.hybride.course_par_semaine ? { regles: reglesHybride(persona) } : null,

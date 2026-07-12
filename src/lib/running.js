@@ -4,8 +4,9 @@
 //   docs/veille/11-entrainement-hybride.md (placement salle vs séances-clés)
 // Générique : le persona (normalisé par personne.js) et la table DISTANCES pilotent tout.
 
-import { estimerVdot, alluresEntrainement, allurePourFraction, tempsPredit, parseTemps, allureMarathonConservatrice } from "./vdot.js";
+import { estimerVdot, alluresEntrainement, allurePourFraction, tempsPredit, parseTemps, allureMarathonConservatrice, formatAllure } from "./vdot.js";
 import { DISTANCES } from "./distances.js";
+import { creerAvis, avisDepuisTexte, adaptationsCourseEnAvis } from "./avis.js";
 import { chargeEndurance, simulerCharge } from "./charge.js";
 import { analyserSemaine, signauxDescente, jambesLourdesSortie, FENETRE_NM, FENETRE_DESCENTE, JOURS_SEMAINE } from "./placement.js";
 import { appliquerLimitationsCourse } from "./limitations.js";
@@ -326,41 +327,49 @@ function composerSemaine(vdot, volume_km, longue_km, phase, d, joursCourse, sall
   }
 
   // Salle jambes — le jour n'est plus DÉCRÉTÉ (« mercredi, sinon vendredi ») : il est CALCULÉ.
-  // On teste chaque jour candidat avec la contrainte de placement et on retient le premier qui
-  // ne tombe pas dans la fenêtre 24–48 h avant une séance-clé (placement.js). En affûtage, la
-  // séance devient un entretien léger : plus de jambes lourdes, donc plus de contrainte
-  // (veille/11 §3, veille/12 §6).
-  if (salleParSemaine >= 2) {
-    const jambesLourdes = phase !== "affutage";
-    const contenu = jambesLourdes
-      ? "Salle — renfo jambes modéré (à distance de la qualité et de la longue, veille/11 §3)"
-      : "Salle — entretien léger, réduire les jambes lourdes (veille/11 §3)";
-    // Jours LIBRES d'abord (on n'écrase jamais un footing : ce serait perdre du volume). S'il n'y
-    // en a pas, on double avec un footing FACILE — jamais avec une séance-clé (veille/11 §2 :
-    // séparer de 6 h+). La séance-clé, elle, reste sanctuarisée.
-    const libres = JOURS_SEMAINE.filter((j) => !semaine.has(j));
-    const doublables = JOURS_SEMAINE.filter((j) => semaine.get(j)?.type === "facile");
-    const candidats = libres.length ? libres : doublables;
-    const evalue = candidats.map((jour) => {
-      const essai = new Map(semaine);
-      essai.set(jour, { ...(essai.get(jour) ?? { jour }), jour, jambes_lourdes: jambesLourdes });
-      const a = analyserSemaine(vuePlacement(essai), optsPlacement);
-      return { jour, conflits: a.conflits.length, limites: a.limites.length };
-    });
-    evalue.sort((a, b) => a.conflits - b.conflits || a.limites - b.limites);
-    const retenu = evalue[0];
-    if (retenu) {
-      const existant = semaine.get(retenu.jour);
-      semaine.set(
-        retenu.jour,
-        existant
-          ? { ...existant, jambes_lourdes: jambesLourdes, salle: contenu, contenu: `${existant.contenu} · ${contenu} — séparer les deux de **6 h+** (veille/11 §2)` }
-          : { jour: retenu.jour, type: "salle", jambes_lourdes: jambesLourdes, contenu }
-      );
-    }
-  }
+  // En affûtage, la séance devient un entretien léger : plus de jambes lourdes, donc plus de
+  // contrainte (veille/11 §3, veille/12 §6).
+  placerSalleJambes(semaine, { salleParSemaine, jambesLourdes: phase !== "affutage", optsPlacement });
 
   return JOURS_SEMAINE.map((jour) => semaine.get(jour) ?? { jour, type: "repos", contenu: "Repos" });
+}
+
+/**
+ * Place la séance de RENFO JAMBES au jour qui minimise les conflits de placement (placement.js).
+ *
+ * ⚠️ **Extrait de `composerSemaine` — et pas dupliqué.** Le plan de base a exactement le même
+ * besoin, et un fait dupliqué est un fait qui divergera (philosophy §11). Le jour n'est pas
+ * DÉCRÉTÉ : on teste chaque candidat et on retient celui qui ne tombe pas dans la fenêtre 24–48 h
+ * avant une séance-clé.
+ *
+ * Jours LIBRES d'abord (on n'écrase jamais un footing : ce serait perdre du volume). S'il n'y en a
+ * pas, on double avec un footing FACILE — jamais avec une séance-clé (veille/11 §2 : séparer de
+ * 6 h+). La séance-clé reste sanctuarisée.
+ */
+function placerSalleJambes(semaine, { salleParSemaine, jambesLourdes, optsPlacement }) {
+  if (salleParSemaine < 2) return;
+  const contenu = jambesLourdes
+    ? "Salle — renfo jambes modéré (à distance de la qualité et de la longue, veille/11 §3)"
+    : "Salle — entretien léger, réduire les jambes lourdes (veille/11 §3)";
+  const libres = JOURS_SEMAINE.filter((j) => !semaine.has(j));
+  const doublables = JOURS_SEMAINE.filter((j) => semaine.get(j)?.type === "facile");
+  const candidats = libres.length ? libres : doublables;
+  const evalue = candidats.map((jour) => {
+    const essai = new Map(semaine);
+    essai.set(jour, { ...(essai.get(jour) ?? { jour }), jour, jambes_lourdes: jambesLourdes });
+    const a = analyserSemaine(vuePlacement(essai), optsPlacement);
+    return { jour, conflits: a.conflits.length, limites: a.limites.length };
+  });
+  evalue.sort((a, b) => a.conflits - b.conflits || a.limites - b.limites);
+  const retenu = evalue[0];
+  if (!retenu) return;
+  const existant = semaine.get(retenu.jour);
+  semaine.set(
+    retenu.jour,
+    existant
+      ? { ...existant, jambes_lourdes: jambesLourdes, salle: contenu, contenu: `${existant.contenu} · ${contenu} — séparer les deux de **6 h+** (veille/11 §2)` }
+      : { jour: retenu.jour, type: "salle", jambes_lourdes: jambesLourdes, contenu }
+  );
 }
 
 // Cadence : le nudge — garde-fou blessure gratuit. ⚠️ Sa doctrine (et la PURGE des deux chiffres
@@ -381,7 +390,26 @@ function partFacile(seances) {
   return total > 0 ? e / total : 1;
 }
 
+/**
+ * 🔴 **LE POINT D'ENTRÉE — et le bug qu'il répare.**
+ *
+ * Le moteur n'avait **qu'un seul** type de plan : la **préparation d'une course datée**. Un
+ * utilisateur qui court **sans préparer aucune course** était **refusé** (« Running sans distance
+ * objectif »). **Ce n'était pas une donnée qui manquait : c'était une fonctionnalité.**
+ *
+ * La bascule tient à **une seule question** : **y a-t-il une DATE ?**
+ *   • **oui** → plan **périodisé** (base → spécifique → **affûtage** → course). Inchangé.
+ *   • **non** → plan de **BASE** : volume, allure facile, progression prudente. **Ni affûtage, ni
+ *     pic, ni chrono cible** — le moteur ne les fabrique pas, parce qu'ils n'ont de sens que par
+ *     rapport à une date.
+ */
 export function genererPlanRunning(persona, dateGeneration = new Date()) {
+  return persona.running?.course?.date
+    ? genererPlanCourse(persona, dateGeneration)
+    : genererPlanBase(persona, dateGeneration);
+}
+
+function genererPlanCourse(persona, dateGeneration = new Date()) {
   const r = persona.running;
   const d = DISTANCES[r.objectif.distance];
   if (!d) throw new Error(`Distance « ${r.objectif.distance} » inconnue (attendu : ${Object.keys(DISTANCES).join(", ")}).`);
@@ -636,6 +664,11 @@ export function genererPlanRunning(persona, dateGeneration = new Date()) {
 
   return {
     persona: persona.nom,
+    // 🔴 L'API DE DONNÉES — le mode et les avis STRUCTURÉS (voir `avis.js`). L'app ne parse plus du
+    // Markdown : elle lit `avis[]` (essentiel / pourquoi / source / cible) et affiche ce qu'elle veut.
+    mode: persona.mode ?? null,
+    type: "course",
+    avis: avisDuPlan(alertes, limitationsCourse),
     distance: { ...d, code: r.objectif.distance },
     but: r.objectif.but,
     course: r.course,
@@ -765,7 +798,7 @@ export function genererPlanRunning(persona, dateGeneration = new Date()) {
       fenetre: FENETRE_NM,
       // 🔴 LA CONSÉQUENCE REMONTÉE À L'ADR 0006 : la fenêtre ci-dessus est calibrée MUSCULATION,
       // et elle est trop courte après une grosse descente. Le moteur DÉTECTE et SIGNALE — il ne
-      // fabrique pas la bonne fenêtre (aucune source ne la donne). Arbitrage : le propriétaire du produit.
+      // fabrique pas la bonne fenêtre (aucune source ne la donne). Arbitrage : le propriétaire.
       fenetre_descente: FENETRE_DESCENTE,
       signaux_descente: semaines.flatMap((s) => (s.placement.signaux_descente ?? []).map((x) => ({ ...x, semaine: s.num }))),
       conflits: semaines.flatMap((s) => s.placement.conflits.map((c) => ({ ...c, semaine: s.num }))),
@@ -773,6 +806,512 @@ export function genererPlanRunning(persona, dateGeneration = new Date()) {
       actif: r.hybride.salle_par_semaine >= 2,
       // La règle a-t-elle été DURCIE par une limitation ACTIVE du bas du corps ? (La fenêtre, elle,
       // ne bouge pas — cf. la doctrine dans placement.js.)
+      durci: Boolean(limitationsCourse.zone_jambes_active),
+      zone_active: limitationsCourse.zone_jambes_active,
+    },
+  };
+}
+
+/**
+ * 🔴 **LES AVIS — l'API de données de tout ce que le plan a à DIRE.**
+ *
+ * Les `alertes` historiques (des **chaînes Markdown**, écrites pour un terminal) sont **converties**
+ * en avis structurés — **l'essentiel** d'un côté, **le pourquoi** de l'autre. Elles restent le
+ * canal `alertes` (le CLI et les tests les lisent), mais elles ne sont plus **la seule** forme :
+ * l'app lit `avis[]`, où chaque entrée porte son `titre`, son `detail`, sa `gravite` et sa `cible`.
+ *
+ * ⚠️ Le découpage de ces messages historiques est **mécanique** (`structure: "auto"`) — et c'est une
+ * **dette déclarée**, pas une solution. Les **adaptations**, elles, sont **autorées** : elles portent
+ * leur zone et leur levier, et l'app peut les afficher **au bon endroit** au lieu de les empiler.
+ */
+function avisDuPlan(alertes, limitationsCourse, autores = []) {
+  return [
+    ...autores,
+    ...adaptationsCourseEnAvis(limitationsCourse),
+    ...alertes
+      .map((a) => avisDepuisTexte(a, { type: "alerte", gravite: a.includes("🔴") ? "critique" : "avertissement" }))
+      .filter(Boolean),
+  ];
+}
+
+// ═════════════════════════════════════════════════════════════════════════════════════════════
+// 🏃 LE PLAN DE BASE — « je cours, et je ne prépare aucune course »
+// ═════════════════════════════════════════════════════════════════════════════════════════════
+//
+// 🔴 **Le moteur supposait que si tu cours, c'est pour préparer une course.** C'est faux pour la
+// majorité des gens qui courent — et ça a **bloqué le premier utilisateur réel** de l'app, le soir
+// où il l'a installée. Il court **pour courir**. Il vise le trail **à terme, sans échéance**.
+//
+// ── CE QUE CE PLAN EST ──────────────────────────────────────────────────────────────────────────
+//   • du **VOLUME**, construit **graduellement** (~10 %/sem, garde-fou souple — veille/03 §5) ;
+//   • de l'**ALLURE FACILE** : la distribution 80/20 (veille/03 §1) — la base est le lieu du volume
+//     facile, et **elle n'a pas de fin** ;
+//   • un **cycle de 4 semaines** (3 de charge + 1 de récupération) qui **se répète**, indéfiniment ;
+//   • et, si le terrain est déclaré et le point de départ connu, une **progression du DÉNIVELÉ**,
+//     en **alternance** avec le volume (jamais les deux la même semaine).
+//
+// ── 🔴 CE QU'IL N'EST PAS — ET LE MOTEUR NE LE FABRIQUERA PAS ───────────────────────────────────
+//   ❌ **Pas d'AFFÛTAGE.** L'affûtage fait chuter le volume pour arriver frais **à une date**.
+//      Sans date, il n'affûte **rien** — il fait juste perdre du volume.
+//   ❌ **Pas de PIC.** Un pic est un **sommet** : il suppose qu'on redescend ensuite, **vers** quelque
+//      chose. Sans échéance, il n'y a pas de sommet — il y a une **progression**.
+//   ❌ **Pas de CHRONO CIBLE.** Aucune course, aucun chrono. L'équivalence VDOT dit **où tu en es**,
+//      elle ne promet **rien** pour un jour J qui n'existe pas.
+//   **Les trois sont des fonctions de la DATE. Les mimer sans elle serait du théâtre.**
+
+// Horizon d'AFFICHAGE du plan de base, en semaines.
+// @chiffre-derive ⚠️ **Ce nombre n'a AUCUNE signification physiologique — et c'est justement le
+// point.** Un plan de base n'a pas de durée : c'est un **cycle qui se répète** (3 semaines de charge
+// + 1 de récupération, +≤10 %/sem — veille/03 §5). 12 semaines = **3 cycles**, c'est-à-dire une
+// **fenêtre d'affichage**, pas une périodisation. Le moteur n'invente donc aucune structure : il
+// **imprime** la règle sur 12 semaines au lieu de l'imprimer à l'infini. Réglable :
+// `running.horizon_semaines`.
+const HORIZON_BASE_SEMAINES = 12;
+
+/**
+ * La longue sortie d'un plan de base : elle **suit le volume**, dans la proportion **déclarée par
+ * l'utilisateur** (`longue_sortie_actuelle_km / volume_actuel_km_sem`).
+ *
+ * ⚠️ **Aucun palier inventé, aucun plafond inventé.** Le plan de course a `pas_ls` et `ls_plafond`
+ * (des paramètres **dérivés de la distance à préparer**) ; **ici, il n'y a pas de distance à
+ * préparer**. Fabriquer un plafond reviendrait à répondre à une question que personne n'a posée. La
+ * longue sortie est donc **bornée par le volume lui-même** — qui, lui, est bel et bien bridé.
+ * Si une distance objectif **est** déclarée (sans date), son plafond s'applique : il existe déjà.
+ */
+function planifierLonguesSortiesBase(lsDepart, volumes, volumeDepart, { plafond = null } = {}) {
+  const part = volumeDepart > 0 ? Math.min(lsDepart / volumeDepart, 1) : 1;
+  return volumes.map((v) => {
+    const km = Math.max(1, Math.round(v.km * part));
+    return plafond ? Math.min(km, plafond) : km;
+  });
+}
+
+/**
+ * La séance de qualité d'un plan de base — **ou son absence, et c'est une décision.**
+ *
+ * La part **dure** ne dépasse jamais **20 % du volume de la semaine** : c'est la distribution
+ * **80/20** (veille/03 §1), appliquée **littéralement** plutôt que par un nombre de kilomètres
+ * décrété. Conséquence directe et voulue : **sous ~5 km/sem, il n'y a pas de séance de qualité du
+ * tout** — 1 km de seuil dans une semaine de 5 km, ce serait 20 % de dur sur une base qui n'existe
+ * pas encore. **Le moteur préfère ne rien prescrire que prescrire de l'intensité sur du vide.**
+ */
+function seanceQualiteBase(vdot, volume_km) {
+  const alE = allureMediane(vdot, "E");
+  // Plafond à 4 km de seuil : c'est **exactement** le bloc T de la phase de base du plan de course
+  // (`seanceQualite`, phase « base »). Le même chiffre, pour la même chose — pas un second.
+  const tKm = Math.min(4, Math.floor(volume_km * 0.2));
+  if (tKm < 1) return null;
+  return {
+    contenu: `Qualité : 2 km E + ${tKm} km T + 2 km E — **une seule séance dure par semaine** (80/20, veille/03 §1)`,
+    segments: [
+      { zone: "E", duree_min: 2 * alE, km: 2 },
+      { zone: "T", duree_min: tKm * allureMediane(vdot, "T"), km: tKm },
+      { zone: "E", duree_min: 2 * alE, km: 2 },
+    ],
+    km: 4 + tKm,
+  };
+}
+
+/**
+ * Compose une semaine de plan de base.
+ *
+ * ⚠️ **`composerSemaine` (plan de course) ne pouvait PAS servir ici** : il pose **toujours** deux
+ * séances-clés (qualité mardi + longue dimanche), quel que soit `jours_par_semaine`. Sur un
+ * utilisateur qui court **une fois par semaine**, il en aurait donc généré **deux**. Ce n'est pas un
+ * détail de rendu : c'est **prescrire une séance qui n'existe pas**.
+ */
+function composerSemaineBase(vdot, volume_km, longue_km, joursCourse, salleParSemaine, { zone_jambes_active = null, denivele_m = 0 } = {}) {
+  const alE = allureMediane(vdot, "E");
+  const optsPlacement = { zone_jambes_active };
+  const semaine = new Map();
+
+  // Sous 3 sorties/semaine, **aucune séance de qualité** : avec une ou deux sorties, tout le volume
+  // est déjà en dessous du minimum qui rendrait le 80/20 réalisable — et la seule chose qui
+  // construise une base à ce niveau, c'est **courir plus souvent**, pas courir plus dur.
+  const qualite = joursCourse >= 3 ? seanceQualiteBase(vdot, volume_km) : null;
+  const kmQualite = qualite?.km ?? 0;
+
+  const longue = Math.max(1, Math.min(Math.round(longue_km), Math.max(volume_km - kmQualite, 1)));
+  semaine.set("Dimanche", {
+    jour: "Dimanche",
+    type: "longue",
+    // La longue sortie **est** la séance-clé d'un plan de base : c'est elle que la contrainte de
+    // placement doit protéger (veille/11 §3), exactement comme dans un plan de course.
+    qualitative: true,
+    contenu: joursCourse === 1 ? `Sortie ${longue} km en E — **ta seule sortie de la semaine**` : `Longue sortie ${longue} km en E`,
+    segments: [{ zone: "E", duree_min: longue * alE, km: longue }],
+    km: longue,
+  });
+  if (qualite) semaine.set("Mardi", { jour: "Mardi", type: "qualite", qualitative: true, ...qualite });
+
+  const nbFaciles = Math.max(joursCourse - 1 - (qualite ? 1 : 0), 0);
+  const joursFaciles = ["Jeudi", "Samedi", "Mercredi", "Vendredi"].slice(0, nbFaciles);
+  const reste = Math.max(volume_km - longue - kmQualite, 0);
+  if (joursFaciles.length && reste > 0) {
+    const parJour = Math.floor(reste / joursFaciles.length);
+    const kmFacile = joursFaciles.map(() => parJour);
+    kmFacile[0] += reste - parJour * joursFaciles.length;
+    joursFaciles.forEach((jour, i) => {
+      if (kmFacile[i] > 0) {
+        semaine.set(jour, { jour, type: "facile", contenu: `Footing E ${kmFacile[i]} km`, segments: [{ zone: "E", duree_min: kmFacile[i] * alE, km: kmFacile[i] }], km: kmFacile[i] });
+      }
+    });
+  }
+
+  // ⛰️ Le D+ descend dans les séances **AVANT** le placement de la salle : une sortie vallonnée
+  // laisse des **jambes lourdes** (la descente est EXCENTRIQUE, ADR 0006 §1.5).
+  repartirDenivele([...semaine.values()], denivele_m);
+  for (const s of semaine.values()) {
+    if (!s.denivele_m) continue;
+    s.contenu =
+      `${s.contenu} · **${s.denivele_m} m D+ / ${s.denivele_negatif_m} m D−** ` +
+      `— ⚠️ **la DESCENTE est la contrainte** (excentrique) ; à l'**effort**, pas à l'allure (le VDOT est calibré sur le plat)`;
+  }
+
+  if (salleParSemaine >= 1) {
+    semaine.set("Lundi", { jour: "Lundi", type: "salle", jambes_lourdes: false, contenu: "Salle — haut du corps (aucun conflit avec la course, veille/11 §2)" });
+  }
+  // Pas d'affûtage dans un plan de base ⇒ le renfo jambes reste **lourd** toute l'année. La
+  // contrainte de placement s'applique donc **en permanence** : c'est le mode hybride, sans répit.
+  placerSalleJambes(semaine, { salleParSemaine, jambesLourdes: true, optsPlacement });
+
+  return JOURS_SEMAINE.map((jour) => semaine.get(jour) ?? { jour, type: "repos", contenu: "Repos" });
+}
+
+/**
+ * 🏃 **LE PLAN DE BASE.** Aucune date, aucune périodisation, aucun affûtage. Du volume, de l'allure
+ * facile, une progression prudente — et le moteur **dit** ce qu'il ne fait pas.
+ */
+export function genererPlanBase(persona, dateGeneration = new Date()) {
+  const r = persona.running;
+  const debut = lundiSuivant(dateGeneration);
+  const nbSemaines = Math.max(4, Math.round(Number(r.horizon_semaines ?? HORIZON_BASE_SEMAINES)));
+  const alertes = [];
+  const autores = [];
+
+  // La distance objectif est **facultative** ici. Si elle est déclarée (sans date), elle sert
+  // encore : elle **pondère** les performances (veille/03 §2) et elle borne la longue sortie.
+  const d = r.objectif.distance ? DISTANCES[r.objectif.distance] : null;
+
+  const rec = r.reconciliation ?? null;
+  const vdot = rec?.vdot ?? r.vdot_estime ?? 38;
+  const profilCode = rec?.profil?.code ?? null;
+  const allures = alluresEntrainement(vdot);
+
+  autores.push(
+    creerAvis({
+      id: "base:ce-que-ce-plan-est",
+      type: "info",
+      gravite: "info",
+      titre: "**Plan de BASE** — aucune course datée : ni affûtage, ni pic, ni chrono cible",
+      detail:
+        "**Ce que ce plan EST** : du **volume**, de l'**allure facile**, une **progression prudente** (≤ ~10 %/sem, " +
+        "garde-fou souple — veille/03 §5), et un **cycle de 4 semaines** (3 de charge + 1 de récupération) qui **se " +
+        "répète**. La distribution est **80/20** (veille/03 §1) : la base est le lieu du **volume facile**.\n\n" +
+        "🔴 **Ce qu'il N'EST PAS, et le moteur ne le fabriquera pas :**\n" +
+        "- **pas d'AFFÛTAGE** — l'affûtage fait chuter le volume pour arriver frais **à une date**. Sans date, il " +
+        "n'affûte rien : il fait juste perdre du volume ;\n" +
+        "- **pas de PIC** — un pic suppose qu'on redescend **vers** quelque chose. Sans échéance, il n'y a pas de " +
+        "sommet, il y a une **progression** ;\n" +
+        "- **pas de CHRONO CIBLE** — aucune course, aucun chrono. L'équivalence VDOT dit **où tu en es**, elle ne " +
+        "promet rien pour un jour J qui n'existe pas.\n\n" +
+        "**Le jour où tu auras une course, déclare `running.course.date` : le moteur bascule seul en plan périodisé.**",
+      source: "veille/03 §1 (80/20) · veille/03 §5 (charge graduelle)",
+    })
+  );
+
+  // ═══ CE QUE LE VDOT VAUT ICI — et pourquoi c'est SANS DANGER ═══════════════════════════════
+  // Sur un plan de course, un VDOT calé trop bas fait rater un chrono. Sur un plan de base, il fait
+  // courir… **trop facile**. Ce n'est pas la même faute, et le moteur ne va pas paniquer pour rien.
+  if (rec && ["borne_inferieure", "suppose_par_niveau", "aucune"].includes(rec.source_vdot)) {
+    autores.push(
+      creerAvis({
+        id: "base:vdot-incertain",
+        type: "aveu",
+        gravite: "info",
+        titre: `**Tes allures reposent sur un VDOT ${rec.source_vdot === "borne_inferieure" ? "PLANCHER" : "SUPPOSÉ"} (${vdot.toFixed(1)}) — donc elles sont probablement trop LENTES**`,
+        detail:
+          "🕳️ **Le moteur n'a aucune mesure de ta vitesse.** " +
+          (rec.source_vdot === "borne_inferieure"
+            ? "Ta seule performance exploitable a été courue à effort **NON maximal** : elle dit « je vaux **au moins** ça », pas « je vaux ça »."
+            : "Tu n'as déclaré aucune **course** exploitable — une sortie d'**entraînement** prouve un **volume**, pas une **vitesse**.") +
+          "\n\n✅ **Et sur un plan de base, ce n'est PAS grave — c'est même le bon sens de la faute.** Un VDOT " +
+          "sous-estimé produit une allure facile… **encore plus facile**. Or l'allure facile est **censée** être " +
+          "facile (80/20, veille/03 §1). **Sur un plan de course, cette même erreur ferait rater un chrono ; ici, " +
+          "elle ne coûte rien.**\n\n" +
+          "**Le moteur ne t'impose donc AUCUN test chrono** — tu ne prépares aucune course, il n'a rien à te vendre. " +
+          "Si tu **veux** des allures justes, cours un 5 km à fond une fois et déclare-le dans `running.performances[]` : " +
+          "tout se recale seul.",
+        source: "veille/03 §1 (80/20) · veille/03 §2 (équivalence VDOT)",
+      })
+    );
+  }
+
+  // 🎯 Un coureur dont l'allure d'endurance DÉCLARÉE est plus rapide que l'allure E que le moteur
+  // lui propose : le VDOT supposé est trop bas, et le moteur peut le **constater** sans rien inventer.
+  const alE = allureMediane(vdot, "E");
+  const plusRapideQueE = (rec?.performances ?? []).find((p) => p.allure_min_par_km < alE);
+  if (plusRapideQueE && rec?.source_vdot !== "moyenne_ponderee" && rec?.source_vdot !== "mesure_unique") {
+    autores.push(
+      creerAvis({
+        id: "base:allure-e-trop-lente",
+        type: "aveu",
+        gravite: "avertissement",
+        titre: `**Tu cours DÉJÀ plus vite (${formatAllure(plusRapideQueE.allure_min_par_km)}) que l'allure facile que le moteur te propose (${formatAllure(alE)})**`,
+        detail:
+          `Tu as déclaré ${(plusRapideQueE.distance_m / 1000).toFixed(1)} km à **${formatAllure(plusRapideQueE.allure_min_par_km)}** — ` +
+          `et le VDOT **supposé** (${vdot.toFixed(1)}) te donne une allure facile de **${formatAllure(alE)}**, c'est-à-dire ` +
+          `**plus lente que ce que tu fais déjà**. **Le moteur te le dit au lieu de faire comme si de rien n'était.**\n\n` +
+          `⚠️ **Il ne va PAS « corriger » le VDOT pour autant** : cette sortie est une preuve de **volume**, pas de ` +
+          `**vitesse** (en tirer un VDOT reviendrait à confondre allure d'endurance et allure de course — le moteur le ` +
+          `refuse ailleurs, il ne va pas le faire ici). **Ce qu'il fait : il te montre la contradiction et te dit ce qui ` +
+          `la lève** — une seule performance à effort maximal dans \`running.performances[]\`.\n\n` +
+          `✅ **En attendant, cours à l'effort, pas au chronomètre.** L'allure E est une **borne haute d'effort**, pas ` +
+          `une consigne de vitesse : si ${formatAllure(alE)} te paraît trop lent, c'est probablement que ça l'est.`,
+        source: "veille/03 §2",
+      })
+    );
+  }
+
+  // ═══ LIMITATIONS × COURSE — identiques au plan de course. Un genou ne sait pas si tu as une
+  // course dans le calendrier.
+  const limitationsCourse = appliquerLimitationsCourse(persona);
+  const gelVolume = limitationsCourse.contraintes.volume.gel;
+  for (const a of limitationsCourse.alertes) alertes.push(a);
+  if (persona.limitations_migration) alertes.push(persona.limitations_migration.message);
+  if (gelVolume) {
+    autores.push(
+      creerAvis({
+        id: "base:volume-gele",
+        type: "adaptation",
+        gravite: "critique",
+        titre: `🩹 **Volume de course GELÉ** — il ne monte pas (${limitationsCourse.contraintes.volume.zones.join(", ")} : limitation ACTIVE)`,
+        detail:
+          "La course est un **impact répété** : on n'ajoute pas de cycles de charge sur une zone qui fait déjà mal " +
+          "(veille/03 §5 — la charge graduelle est le levier de prévention le mieux étayé côté course ; ici, " +
+          "« graduelle » veut dire **plate**). ⚠️ **Choix de sécurité ASSUMÉ, pas une conclusion scientifique** — aucune " +
+          "source ne chiffre le volume « sûr » d'une articulation douloureuse, donc le moteur n'invente aucun chiffre.\n\n" +
+          "✅ **Et sur un plan de base, le coût est plus faible qu'il n'y paraît** : tu ne prépares aucune course, donc " +
+          "**tu ne rates rien**. Tu continues à courir, tu ne progresses simplement pas en volume tant que la zone n'est " +
+          "pas examinée. **Fais-la examiner : c'est ça qui débloque la progression, pas un réglage de plan.**",
+        source: "veille/03 §5",
+        cible: { discipline: "course", levier: "volume", zones: limitationsCourse.contraintes.volume.zones },
+      })
+    );
+  }
+
+  // ═══ DÉNIVELÉ — ⛰️ LA BASE TRAIL SANS ÉCHÉANCE ═════════════════════════════════════════════
+  // 🔴 **Peut-on construire une base trail sans date ? OUI — et rien n'avait besoin d'être inventé.**
+  // Ce qui dépend d'une date, dans le dénivelé, c'est **l'affûtage** (quand cesser la descente), et
+  // **lui seul** — la veille dit d'ailleurs qu'elle n'en sait rien (`NON_SOURCE_DENIVELE`). Tout le
+  // reste — départ **MESURÉ**, progression **RELATIVE** par paliers, **alternance** volume/dénivelé —
+  // est **indépendant de toute échéance**. Le moteur planifie donc le D+ **exactement comme sur un
+  // plan de course**, moins l'affûtage. **Il ne fabrique rien de neuf : il retire ce qui n'a plus de sens.**
+  const terrain = r.objectif.terrain;
+  const nonPlanifie = raisonNonPlanifie({
+    terrain,
+    depart_m: r.denivele_actuel_m_sem ?? null,
+    eviter: limitationsCourse.contraintes.denivele.eviter,
+    zones: limitationsCourse.contraintes.denivele.zones,
+    sans_course: true,
+  });
+  const dPlanifie = !nonPlanifie;
+  if (nonPlanifie?.message) alertes.push(nonPlanifie.message);
+
+  const { volumes, pic } = planifierVolumes(r.volume_actuel_km_sem, nbSemaines, [], { gel: gelVolume, alterner: dPlanifie });
+  const longues = planifierLonguesSortiesBase(r.longue_sortie_actuelle_km, volumes, r.volume_actuel_km_sem, {
+    plafond: d?.ls_plafond ?? null,
+  });
+
+  let dPlan = null;
+  if (dPlanifie) {
+    dPlan = planifierDenivele(volumes, { depart_m: r.denivele_actuel_m_sem, gel: gelVolume });
+    autores.push(
+      creerAvis({
+        id: "base:trail-sans-echeance",
+        type: "info",
+        gravite: "info",
+        titre: `⛰️ **Base en dénivelé — sans échéance, et c'est possible** : ${dPlan.depart_m} m D+/sem au départ, en alternance avec le volume`,
+        detail:
+          "**Ce qui, dans le dénivelé, dépend d'une date ? UNE seule chose : l'affûtage** (quand cesser la descente " +
+          "avant la course) — et la veille dit franchement qu'elle **n'en sait rien** (aucune étude d'affûtage en trail). " +
+          "**Tout le reste en est indépendant** : ton **point de départ** est **mesuré** (jamais supposé), la progression " +
+          "est **RELATIVE** à ce que tu encaisses **déjà** (par paliers), et la **règle d'alternance** tient debout toute " +
+          "seule.\n\n" +
+          "**La règle, encodée dans la génération** (colonne « Monte ») : **jamais le volume ET le dénivelé la même " +
+          "semaine.** Elle ne vient pas d'un essai sur le dénivelé — elle vient du fait que **la descente laisse une " +
+          "trace neuromusculaire de 3–4 jours** (veille/20 §2.2) : deux contraintes qui montent ensemble sur une semaine " +
+          "de 7 jours ne laissent pas la place à cette récupération. **C'est un raisonnement, et il est étiqueté comme tel.**\n\n" +
+          "🔴 **Et ce que le moteur ne dira JAMAIS** : « fais des descentes, ça protégera ton genou ». L'effet répété " +
+          "protège le **MUSCLE**, **pas le TENDON** — et aucune preuve épidémiologique ne lie la descente à une " +
+          "tendinopathie rotulienne (veille/20 §3.2).",
+        source: "veille/20 §2.2 · veille/20 §5 · ADR 0006 §1.5",
+        cible: { discipline: "course", levier: "denivele", terrain },
+      })
+    );
+  }
+
+  const optsPlacement = { zone_jambes_active: limitationsCourse.zone_jambes_active };
+  const semaines = volumes.map((v, i) => {
+    const lundi = new Date(debut.getTime() + i * 7 * JOUR_MS);
+    const dSemaine = dPlan ? dPlan.semaines[i] ?? 0 : 0;
+    const seances = composerSemaineBase(vdot, v.km, longues[i], r.jours_par_semaine, r.hybride.salle_par_semaine, {
+      ...optsPlacement,
+      denivele_m: dSemaine,
+    });
+    const dPlus = seances.reduce((n, s) => n + (s.denivele_m ?? 0), 0);
+    return {
+      num: i + 1,
+      lundi: fmtDate(lundi),
+      // 🔴 **UNE SEULE PHASE, et elle s'appelle « base ».** Il n'y a ni « spécifique » (spécifique à
+      // QUOI ?) ni « affûtage » (affûter POUR quand ?). Le moteur ne mime pas une périodisation.
+      phase: "base",
+      type: v.type,
+      volume_km: v.km,
+      longue_km: longues[i],
+      ...(dPlanifie && dPlus > 0 ? { denivele_m: dPlus, denivele_negatif_m: dPlus, denivele_boucle: true } : {}),
+      monte: v.monte ?? null,
+      seances,
+      placement: analyserSemaine(
+        JOURS_SEMAINE.map((jour) => jourPlacement(jour, seances.find((x) => x.jour === jour))),
+        optsPlacement
+      ),
+      part_facile: partFacile(seances),
+    };
+  });
+
+  const ceParJour = [];
+  for (const sem of semaines) for (const s of sem.seances) ceParJour.push(s.segments?.length ? chargeEndurance(s.segments) : 0);
+  const historique = simulerCharge(ceParJour, r.charge_42j_depart);
+
+  if (r.jours_par_semaine <= 2) {
+    autores.push(
+      creerAvis({
+        id: "base:frequence-faible",
+        type: "aveu",
+        gravite: "avertissement",
+        titre: `**${r.jours_par_semaine} sortie(s)/semaine : c'est de l'ENTRETIEN, pas une construction de base**`,
+        detail:
+          "Le moteur te génère un plan honnête à cette fréquence, mais il ne va pas te laisser croire qu'il construit " +
+          "quelque chose qu'il ne construit pas. **Ce qui construit une base, c'est la FRÉQUENCE et le VOLUME FACILE** " +
+          "(veille/03 §1) — pas l'intensité. À 1–2 sorties, le volume hebdomadaire plafonne vite et la progression est " +
+          "lente.\n\n" +
+          "⚠️ **Et le moteur ne te prescrira PAS de séance dure pour « compenser »** : ce serait exactement le mauvais " +
+          "geste (plus d'intensité sur moins de base = le chemin classique vers la blessure). **La seule chose qui " +
+          "change vraiment quelque chose ici : une sortie de plus.**\n\n" +
+          "🕳️ **Ce que le moteur ne sait PAS** : aucune source du corpus ne dit combien de sorties/semaine il faut pour " +
+          "« maintenir » une base. Il n'invente donc **aucun seuil** — il te dit ce qui est établi (fréquence + volume " +
+          "facile) et te laisse décider.",
+        source: "veille/03 §1",
+      })
+    );
+  }
+
+  return {
+    persona: persona.nom,
+    mode: persona.mode ?? null,
+    // 🔑 Le discriminant, en une clé : l'app sait **immédiatement** de quel plan il s'agit.
+    type: "base",
+    avis: avisDuPlan(alertes, limitationsCourse, autores),
+    // Pas de `distance` : il n'y a **pas de course**. Un `{ km: 0 }` de complaisance serait un
+    // mensonge de plus (même doctrine que le `denivele_negatif_m: 0` interdit).
+    distance: d ? { ...d, code: r.objectif.distance, sans_date: true } : null,
+    but: r.objectif.but,
+    course: null,
+    genere_le: fmtDate(dateGeneration),
+    debut: fmtDate(debut),
+    nb_semaines: nbSemaines,
+    horizon: {
+      semaines: nbSemaines,
+      // 🔴 L'aveu, en donnée — pas en note de bas de page.
+      quoi: "**Une fenêtre d'AFFICHAGE, pas une périodisation.** Le cycle (3 semaines de charge + 1 de récupération, ≤ ~10 %/sem) **se répète** : le moteur l'imprime sur ces semaines, il ne les *structure* pas vers quoi que ce soit.",
+      reglable: "running.horizon_semaines",
+    },
+    alertes,
+    vdot: +vdot.toFixed(1),
+    reconciliation: rec,
+    profil: rec?.profil ?? null,
+    // Aucun `profil_effets` : sans phase spécifique ni affûtage, le profil n'a **rien à réorienter**.
+    // Prétendre le contraire serait afficher un diagnostic de vitrine.
+    profil_effets: null,
+    allures,
+    // 🔴 Ni prédiction, ni chrono, ni allure « jour J », ni correction marathon : **il n'y a pas de
+    // jour J.** Les champs existent, à `null`, pour que l'app n'ait pas à deviner leur absence.
+    prediction_min: null,
+    chrono: null,
+    correction_marathon: null,
+    plan_ecourte: false,
+    allure_prudente_min_par_km: null,
+    temps_prudent_min: null,
+    cadence: { ...recommandationCadence(r.cadence_spm), ...(limitationsCourse.cadence ? { exigee_par_limitation: limitationsCourse.cadence } : {}) },
+    volume_pic_km: pic,
+    denivele: {
+      planifie: dPlanifie,
+      terrain,
+      terrain_libelle: TERRAINS[terrain]?.libelle ?? terrain,
+      non_planifie: nonPlanifie ? { code: nonPlanifie.code, retire: nonPlanifie.retire, message: nonPlanifie.message } : null,
+      depart_m_sem: dPlanifie ? dPlan.depart_m : null,
+      pic_m_sem: dPlanifie ? Math.max(...semaines.map((s) => s.denivele_m ?? 0)) : null,
+      course: deniveleCourse(r.objectif),
+      alterne: dPlanifie,
+      regle_alternance:
+        "**Jamais le volume ET le dénivelé la même semaine.** Deux variables, deux progressions — une semaine sur deux " +
+        "chacune. Le volume monte donc **deux fois moins vite** : c'est le **prix** de la spécificité, et il est assumé.",
+      convention: dPlanifie
+        ? {
+            pas: PAS_GRADUEL,
+            source_du_pas: PAS_GRADUEL_SOURCE,
+            extrapolation:
+              "⚠️ **Le pas de progression du D+ est le garde-fou du VOLUME, transféré — c'est une EXTRAPOLATION, pas une " +
+              "source.** Aucune étude de la veille ne dit à quelle vitesse construire du dénivelé (veille/20 §5 a cherché " +
+              "et **certifie qu'il n'y a rien**). Le moteur transfère, **et il le dit**.",
+            repartition:
+              "Le D+ hebdo est réparti **proportionnellement aux kilomètres**, **sauf sur la séance de qualité** (les allures " +
+              "T/I/R viennent du VDOT, calibré sur le **PLAT**). Convention **déclarée**, non sourcée.",
+            d_moins:
+              "Sur une **boucle** (départ = arrivée), **D− = D+** : c'est de la **géométrie**, pas une hypothèse. Le D− est " +
+              "écrit **explicitement** parce que **c'est LUI la contrainte** (la descente est **EXCENTRIQUE**, ADR 0006 §1.5).",
+          }
+        : null,
+      // 🔴 CE QUE LE MOTEUR NE SAIT PAS FAIRE SANS DATE, ET IL LE DIT PLUTÔT QUE DE L'INVENTER.
+      sans_echeance: {
+        possible: "**Construire une base en dénivelé SANS échéance est possible, et le moteur le fait** : le départ est mesuré, la progression est relative, l'alternance tient toute seule. **Rien là-dedans n'a besoin d'une date.**",
+        impossible:
+          "🕳️ **Ce qui n'est PAS possible sans date : l'AFFÛTAGE du dénivelé** (« quand cesser la descente ? »). Sur un " +
+          "plan de course, le moteur fait chuter le D+ avec le volume — c'est **cohérent, pas démontré** (aucune étude " +
+          "d'affûtage n'existe en trail). **Sans date, la question ne se pose même pas, et le moteur ne la simule pas.**",
+      },
+      non_source: NON_SOURCE_DENIVELE,
+      veille_trail: {
+        aveuglement_charge: AVEUGLEMENT_DESCENTE,
+        recuperation: RECUP_DESCENTE,
+        effet_repete: EFFET_REPETE,
+        specificite: SPECIFICITE_PROTEGE,
+        conversion_dplus_km: CONVERSION_DPLUS_KM,
+        interdits: INTERDITS_DENIVELE,
+        source: "docs/veille/20-trail-denivele.md (2026-07-11) — écrite sur demande de la piste moteur",
+      },
+      source: "veille/20 (trail & dénivelé — la DESCENTE est la contrainte) · ADR 0006 §1.5 · veille/03 §5 (charge graduelle — pour le VOLUME)",
+    },
+    semaines,
+    limitations_course: limitationsCourse.court ? limitationsCourse : null,
+    limitations_migration: persona.limitations_migration ?? null,
+    volume_gele: gelVolume ? { zones: limitationsCourse.contraintes.volume.zones, pourquoi: limitationsCourse.contraintes.volume.pourquoi } : null,
+    hybride: r.hybride.salle_par_semaine > 0,
+    charge: {
+      charge_42j_depart: r.charge_42j_depart,
+      ecart_jour_course: null, // il n'y a pas de jour de course.
+      ecart_fin_horizon: +historique[historique.length - 1].ecart_42j_7j.toFixed(1),
+      filiere: "endurance seule (la muscu n'y est pas convertie : voir la charge sRPE)",
+      descriptif: true,
+    },
+    placement: {
+      fenetre: FENETRE_NM,
+      fenetre_descente: FENETRE_DESCENTE,
+      signaux_descente: semaines.flatMap((s) => (s.placement.signaux_descente ?? []).map((x) => ({ ...x, semaine: s.num }))),
+      conflits: semaines.flatMap((s) => s.placement.conflits.map((c) => ({ ...c, semaine: s.num }))),
+      limites: semaines.flatMap((s) => s.placement.limites.map((c) => ({ ...c, semaine: s.num }))),
+      actif: r.hybride.salle_par_semaine >= 2,
       durci: Boolean(limitationsCourse.zone_jambes_active),
       zone_active: limitationsCourse.zone_jambes_active,
     },

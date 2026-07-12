@@ -3,6 +3,7 @@
 // conversationnelle par LLM viendra en Phase 4.
 
 import { formatAllure, formatDuree } from "./vdot.js";
+import { iconeGravite, filtrerAvis } from "./avis.js";
 import { MUSCLES_ACCESSOIRES, LIBELLES_PATTERN } from "./exercices.js";
 import { NIVEAUX_PREUVE } from "./echauffement.js";
 import { CADENCE_SOURCE, CADENCE_RETIRE, CADENCE_EN_DESCENTE, SEUIL_NUDGE_CONVENTION } from "./cadence.js";
@@ -22,6 +23,44 @@ const SECURITE_RUNNING = `## Sécurité
 - Progressivité avant tout : ne jamais rattraper une semaine manquée en la comprimant sur la suivante.
 - Signaux d'alerte : douleur qui modifie la foulée, fatigue anormale persistante, sommeil dégradé → réduire, pas serrer les dents (veille/03 §5).
 - L'ACWR et l'écart entre tes moyennes de charge sont des signaux parmi d'autres, jamais des oracles : croiser avec le ressenti (veille/03 §5).`;
+
+// ═════════════════════════════════════════════════════════════════════════════════════════════
+// 🔴 LE FORMATEUR D'AVIS — et la règle qui gouverne désormais TOUT ce fichier
+// ═════════════════════════════════════════════════════════════════════════════════════════════
+//
+// > **`rendu.js` FORMATE. Il n'ÉCRIT PAS.**
+//
+// Le verdict de l'utilisateur : *« j'ai l'impression de lire un article de muscu »*. La cause n'est
+// **pas** la rigueur — c'est que **l'essentiel et le pourquoi étaient fondus dans la même phrase**,
+// et déversés en bloc dans un téléphone. **Tout était dit, tout le temps, au même niveau.**
+//
+// La réparation est **structurelle**, et elle vit dans `avis.js` : chaque chose que le moteur a à
+// dire est **une donnée**, avec **deux niveaux séparés à la source** :
+//   • `titre`  → **L'ESSENTIEL.** Une ligne. **Toujours affiché.**
+//   • `detail` → **LE POURQUOI**, sourcé. **Derrière un tap** (`<details>` ici, un accordéon dans l'app).
+//
+// Ce formateur ne fait **que ça** : il met le titre dans le flux et plie le détail. **Il n'invente
+// aucune phrase** — et un test le vérifie (`tests/avis.test.js` : vider `plan.avis` doit vider le
+// bloc). **Une phrase qui n'est pas dans les données ne doit pas être dans le document.**
+function rendreAvis(avis, { titre = null, types = null } = {}) {
+  const liste = (avis ?? []).filter((a) => !types || types.includes(a.type));
+  if (!liste.length) return "";
+  const corps = liste
+    .map((a) => {
+      const tete = `${iconeGravite(a.gravite)} ${a.titre}`;
+      // Pas de détail → pas d'accordéon vide : un tap qui ne révèle rien est une trahison de plus.
+      if (!a.detail) return `- ${tete}${a.source ? `\n  _${a.source}_` : ""}`;
+      return (
+        `- ${tete}\n` +
+        `  <details><summary>Pourquoi</summary>\n\n${a.detail
+          .split("\n")
+          .map((l) => `  ${l}`)
+          .join("\n")}\n\n${a.source ? `  _Source : ${a.source}_\n\n` : ""}  </details>`
+      );
+    })
+    .join("\n");
+  return `${titre ? `${titre}\n\n` : ""}${corps}\n`;
+}
 
 function tableau(entetes, lignes) {
   return [
@@ -751,7 +790,7 @@ Séries **pondérées** : 1 pour le moteur principal, 0,5 pour la contribution i
 ${volumeMd}
 
 ${p.priorites_appliquees?.length ? p.priorites_appliquees.map((x) => `**Priorité « ${x.muscle} »** : +${x.series_ajoutees} série(s)/sem sur ses exercices principaux (le volume est le levier n°1, veille/02 §1).`).join("\n") + "\n\n" : ""}Équilibre **push/pull** (composés) : ${p.push_pull.push} vs ${p.push_pull.pull} séries — ratio ${p.push_pull.ratio} (cible ≈ 1:1, santé d'épaule, veille/09 §1).
-${p.alertes.length ? "\n" + p.alertes.map((a) => `- ⚠️ ${a}`).join("\n") + "\n" : ""}
+${rendreAvis(p.avis, { types: ["alerte", "aveu", "info", "refus"] })}
 ## Progression
 - **Charge/reps** : ${p.progression.regle}
 - **Volume** : ${p.progression.volume}
@@ -958,7 +997,7 @@ function blocPlacementPlan(plan) {
  *
  * La fenêtre de placement (24–48 h) vient de la **MUSCULATION**. Après une grosse descente, les
  * données parlent en **JOURS** (3–4). **Aucune source ne donne la bonne fenêtre** → le moteur
- * **n'en fabrique pas**. Il **détecte**, il **dit**, et il **remonte l'arbitrage au propriétaire du produit**.
+ * **n'en fabrique pas**. Il **détecte**, il **dit**, et il **remonte l'arbitrage au propriétaire**.
  */
 function blocSignauxDescente(signaux, fenetre) {
   if (!signaux?.length) return "";
@@ -984,7 +1023,7 @@ function blocSignauxDescente(signaux, fenetre) {
         `descente**, alors que ta vitesse de montée en force est **encore altérée à 72 h**.`
       : "",
     `⚠️ **${FENETRE_DESCENTE.ce_que_le_moteur_ne_fait_pas}** ${FENETRE_DESCENTE.ce_que_le_moteur_fait}`,
-    `**Arbitrage en attente** : ${FENETRE_DESCENTE.arbitrage}\n\n_${FENETRE_DESCENTE.source}_`,
+    `**Arbitrage en attente (POUR LE PROPRIÉTAIRE)** : ${FENETRE_DESCENTE.arbitrage}\n\n_${FENETRE_DESCENTE.source}_`,
   ];
   return lignes.filter(Boolean).join("\n\n");
 }
@@ -1109,7 +1148,7 @@ function blocDenivele(plan) {
   const dn = plan.denivele;
   if (!dn) return "";
 
-  // Plan route : rien à dire, et ce n'est pas un manque. On ne pollue pas la page de la personne B.
+  // Plan route : rien à dire, et ce n'est pas un manque. On ne pollue pas la page d'un plan route.
   if (!dn.planifie && dn.non_planifie?.code === "terrain_route") return "";
 
   const parts = ["\n## ⛰️ Dénivelé — la DESCENTE est la contrainte\n"];
@@ -1203,7 +1242,73 @@ function blocDenivele(plan) {
   return parts.join("\n") + "\n";
 }
 
+/**
+ * 🏃 **LE PLAN DE BASE — « je cours, sans préparer aucune course ».**
+ *
+ * Volontairement **court**. Un plan sans échéance n'a pas de jour J à préparer, pas de chrono à
+ * défendre, pas d'affûtage à expliquer : **il n'a donc pas à en parler.** Toute la substance est
+ * dans les **avis** (données), et le document se contente de les **formater**.
+ */
+function rendrePlanBase(persona, plan) {
+  const dPlan = plan.denivele?.planifie;
+  const semainesMd = tableau(
+    dPlan ? ["Sem", "Lundi", "Type", "Volume", "Longue sortie", "D+ / D−", "Monte", "% facile"] : ["Sem", "Lundi", "Type", "Volume", "Longue sortie", "% facile"],
+    plan.semaines.map((s) => {
+      const base = [
+        String(s.num),
+        s.lundi,
+        s.type === "recuperation" ? "récupération" : "charge",
+        `${s.volume_km} km`,
+        `${s.longue_km} km`,
+      ];
+      const suite = dPlan
+        ? [s.denivele_m ? `${s.denivele_m} m / **${s.denivele_negatif_m} m**` : "—", s.monte === "denivele" ? "⛰️ **dénivelé**" : s.monte === "volume" ? "📈 volume" : "—"]
+        : [];
+      return [...base, ...suite, `${Math.round(s.part_facile * 100)} %`];
+    })
+  );
+
+  const semaineType = plan.semaines.find((s) => s.type === "charge" && s.num > 1) ?? plan.semaines[0];
+  const semaineTypeMd = tableau(["Jour", "Séance"], semaineType.seances.map((s) => [s.jour, s.contenu]));
+
+  const alluresMd = tableau(
+    ["Zone", "Nom", "% VDOT", "Allure"],
+    plan.allures.map((z) => [`**${z.code}**`, z.nom, `${Math.round(z.basse * 100)}–${Math.round(z.haute * 100)} %`, z.affichage])
+  );
+
+  return `# Plan de base — ${persona.nom}
+
+_Généré le ${plan.genere_le}. **Aucune course datée** : ce plan **construit**, il ne **prépare** pas._
+
+**Mode** : ${plan.mode?.libelle ?? "course"} · **${plan.nb_semaines} semaines** à partir du ${plan.debut} · volume ${plan.semaines[0].volume_km} → **${plan.volume_pic_km} km/sem**.
+
+${rendreAvis(plan.avis, { types: ["info", "adaptation", "alerte", "aveu", "refus"] })}
+${blocReconciliation(plan)}## Allures d'entraînement (VDOT ${plan.vdot})
+${alluresMd}
+
+⚠️ **Ces allures sont des BORNES D'EFFORT, pas des consignes de chronomètre.** Sans course, tu n'as
+rien à défendre : la zone **E** doit rester **facile** — si elle ne l'est pas, ralentis (80/20, veille/03 §1).
+
+## Calendrier
+${semainesMd}
+
+_**Le cycle se répète** : 3 semaines de charge (+ ≤ ~10 %/sem, veille/03 §5) puis 1 semaine de
+récupération (−25 %). ${plan.horizon.quoi} Réglable : \`${plan.horizon.reglable}\`._
+
+## Semaine type (semaine ${semaineType.num})
+${semaineTypeMd}
+
+${blocPlacementPlan(plan)}${blocDenivele(plan)}${blocCadence(plan)}
+${blocLimitationsCourse(plan)}
+${SECURITE_RUNNING}
+
+${blocAnglesMorts(persona)}${listeHypotheses(persona)}
+${DISCLAIMER}
+`;
+}
+
 export function rendrePlanRunning(persona, plan) {
+  if (plan.type === "base") return rendrePlanBase(persona, plan);
   const d = plan.distance;
   const alluresMd = tableau(
     ["Zone", "Nom", "% VDOT", "Allure"],
@@ -1303,7 +1408,7 @@ docs/veille/12 (prépa course), docs/veille/11 (hybride)._
 **Course** : ${plan.course.nom ?? d.label}, le **${plan.course.date}**${plan.course.profil_parcours ? ` — parcours ${plan.course.profil_parcours}` : ""}${plan.course.barriere_horaire ? `, barrière horaire ${plan.course.barriere_horaire}` : ""}.
 **Plan** : **${plan.nb_semaines} semaines** à partir du ${plan.debut} · pic de volume **${plan.volume_pic_km} km/sem**.
 
-${plan.alertes.map((a) => `${a}\n`).join("\n")}
+${rendreAvis(plan.avis, { types: ["alerte", "aveu", "info", "refus", "adaptation"] })}
 ${blocReconciliation(plan)}## Allures d'entraînement (VDOT ${plan.vdot})
 ${refAllures}
 ${semaineDuTest ? `Un **test chrono est planifié en semaine ${semaineDuTest.num}** (🧪) pour recaler le VDOT et toutes les allures.` : ""}

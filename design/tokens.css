@@ -97,14 +97,79 @@
   --ls-wide: 2.5px;
   --ls-title: -0.5px;
 
-  /* ── Radii ────────────────────────────────────────────────────── */
-  --r-sm: 8px;         /* tags */
-  --r-md: 12px;        /* boutons RIR, encart pourquoi */
-  --r-input: 14px;     /* steppers, lignes de série, bouton pourquoi hero */
-  --r-btn: 16px;       /* CTA principal */
-  --r-card: 22px;      /* cartes standard */
-  --r-hero: 24px;      /* carte hero */
+  /* ── Interlettrage OPTIQUE — il dépend de la taille, jamais l'inverse ──
+     Un `letter-spacing` unique est faux quelque part : plus un texte
+     grandit, plus ses lettres SEMBLENT s'écarter — il faut donc les
+     resserrer ; plus il rétrécit, plus il faut les aérer. C'est la règle
+     que WWDC 2020 (« The Details of UI Typography ») martèle, et c'est ce
+     que fait le système d'Apple sans qu'on le lui demande.
+     En `em`, donc solidaires de la taille — pas en px.
+     (Nos titres portaient −0,5 px, la même valeur à 25 px et à 36 px.) */
+  --tr-display: -0.028em;  /* ≥ 30 px — chrono, tonnage, kcal */
+  --tr-title:   -0.02em;   /* 23-27 px — « Salut, <prénom> », « Push · Force » */
+  --tr-label:   -0.01em;   /* 15-19 px — boutons, titres de ligne */
+  --tr-body:     0;        /* 12-14 px — le corps ne se touche pas */
+  --tr-micro:    0.01em;   /* ≤ 11 px — on AÈRE, on ne resserre pas */
+
+  /* Interligne : inverse de la taille. Serré sur un titre, ample sur du corps. */
+  --lh-display: 1.05;
+  --lh-title: 1.18;
+  --lh-body: 1.5;
+
+  /* ── Radii ────────────────────────────────────────────────────────
+     ⚠️ Relevés le 2026-07-11 (« on sent trop une patte HTML »). Le web
+     arrondit timidement (8-12 px) ; iOS arrondit BEAUCOUP (16-32 px), et
+     surtout de façon CONTINUE — la courbure entre dans le coin au lieu de
+     démarrer net. Deux corrections, pas une :
+
+     1. L'ÉCHELLE — chaque cran monte. C'est la seule des deux qui soit
+        VRAIE sur un vrai iPhone.
+     2. La CONTINUITÉ (`corner-shape: superellipse`, shell.css) — WebKit ne
+        la livre PAS encore. Sur son téléphone, ses coins sont donc ronds,
+        juste beaucoup plus généreux. Je le dis au lieu de le laisser croire.
+
+     Règle des coins CONCENTRIQUES (Apple) : un coin imbriqué se calcule,
+     il ne se choisit pas. r_interne = r_externe − padding. Deux rayons
+     concentriques mal accordés se voient — c'est l'un des tells les plus
+     fiables du « fait à la main ». D'où --r-inner-*, dérivés, pas posés. */
+  --r-sm: 10px;        /* tags */
+  --r-md: 14px;        /* boutons RIR, encart pourquoi */
+  --r-input: 16px;     /* steppers, lignes de série, bouton pourquoi hero */
+  --r-btn: 18px;       /* CTA principal */
+  --r-card: 26px;      /* cartes standard */
+  --r-hero: 32px;      /* carte hero */
+  --r-bar: 28px;       /* la barre d'onglets flottante */
   --r-pill: 999px;
+
+  /* Coins concentriques — dérivés du rayon de carte et du padding interne. */
+  --r-inner-card: calc(var(--r-card) - var(--sp-5));   /* 26 − 18 = 8  */
+  --r-inner-hero: calc(var(--r-hero) - var(--sp-6));   /* 32 − 20 = 12 */
+
+  /* ── Matériaux & profondeur ──────────────────────────────────────
+     « Tout est au même niveau visuel chez nous. » — le propriétaire du produit, 2026-07-11.
+     C'était exact : zéro `box-shadow` de contenu dans les 5 écrans, zéro
+     `backdrop-filter`. Un fond plat + une bordure à 8 % ne fait pas un
+     plan : ça fait un aplat de plus.
+
+     iOS empile TROIS plans, et chacun a une matière :
+       · le CONTENU        — opaque, il défile ;
+       · le CHROME         — translucide, le contenu passe DESSOUS
+                             (une barre opaque MANGE une bande d'écran ;
+                             une barre translucide la LAISSE VIVRE) ;
+       · ce qui FLOTTE     — feuilles, popovers : ombre portée + voile.
+     Jamais deux surfaces translucides claires empilées : la lisibilité
+     s'effondre (c'est la règle qu'Apple répète le plus). */
+  --mat-bar: color-mix(in oklab, var(--bg) 72%, transparent);  /* chrome translucide */
+  --mat-sheet: color-mix(in oklab, var(--surface) 88%, transparent);
+  --mat-blur: 22px;
+  --mat-sat: 165%;
+  /* L'arête claire du haut : la lumière qui accroche le bord du matériau.
+     Sans elle, une surface translucide sombre est un trou, pas un objet. */
+  --mat-edge: rgba(255, 255, 255, 0.09);
+
+  --elev-1: 0 1px 2px rgba(0, 0, 0, 0.30), 0 10px 24px -14px rgba(0, 0, 0, 0.55);
+  --elev-2: 0 2px 6px rgba(0, 0, 0, 0.34), 0 18px 44px -18px rgba(0, 0, 0, 0.62);
+  --elev-3: 0 -2px 10px rgba(0, 0, 0, 0.30), 0 -24px 60px -20px rgba(0, 0, 0, 0.70);
 
   /* ── Espacements ──────────────────────────────────────────────── */
   --sp-1: 4px;
@@ -138,6 +203,14 @@
   --dur-ui:    200ms;   /* transition d'état courante (plafond dur : 300 ms) */
   --dur-sheet: 260ms;   /* entrée d'une feuille. Pas 500 ms : on n'est pas iOS,
                            on est entre deux séries de squat. */
+  --dur-nav:   220ms;   /* passage d'un écran à l'autre (View Transitions).
+                           ⚠️ Ce n'est PAS de l'agrément : c'est de l'ORIENTATION.
+                           « Où étais-je, où suis-je ? » — sans elle, l'écran est
+                           REMPLACÉ, et une app dont les écrans se remplacent est
+                           une suite de pages web. C’est exactement ce que le propriétaire
+                           a senti sans pouvoir le nommer.
+                           Court, parce que c'est le geste le PLUS fréquent de la
+                           navigation : la table de fréquence s'applique ici aussi. */
 
   /* ⚠️ LA SEULE DURÉE QUI DÉPASSE LE PLAFOND DE 300 ms — et elle se justifie
      par la table de FRÉQUENCE, pas par le goût.

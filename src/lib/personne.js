@@ -12,9 +12,19 @@ import { PROFILS_MATERIEL } from "./exercices.js";
 import { TERRAINS, TERRAIN_DEFAUT } from "./denivele.js";
 import { anglesMorts } from "./angles-morts.js";
 import { migrerPerformances, reconcilier } from "./performances.js";
-import { distanceObjectifM } from "./distances.js";
+import { DISTANCES, distanceObjectifM } from "./distances.js";
+import { modeDe } from "./mode.js";
 
 const CHAMPS_PROFIL_REQUIS = ["sexe", "age", "taille_cm", "poids_kg"];
+
+// Départ de volume d'un PLAN DE BASE quand l'utilisateur n'a rien déclaré, en km par sortie.
+// @chiffre-derive ⚠️ **Aucun volume de départ « normal » n'existe, et la veille n'en donne aucun.**
+// Sur un plan de course, le moteur avait au moins la **distance** comme ancrage (un marathonien ne
+// part pas de la même base qu'un coureur de 5 km) ; sur un plan de base, **il n'a plus rien**. 5 km
+// par sortie est une **valeur d'attente délibérément BASSE**, choisie parce que l'asymétrie du coût
+// est totale : un départ trop bas se rattrape en quelques semaines à +10 %/sem (veille/03 §5), un
+// départ trop haut **blesse**. Elle est **affichée** et le moteur **réclame la vraie donnée**.
+const KM_PAR_SORTIE_PRUDENT = 5;
 
 /**
  * Les limitations d'un persona — **où qu'elles soient déclarées**.
@@ -230,8 +240,70 @@ export function normaliserPersona(brut, { aujourdhui = new Date() } = {}) {
   // --- Running ---
   if (p.running) {
     const r = p.running;
-    if (!r.objectif?.distance) throw new Error("Running sans distance objectif (5k / 10k / semi / marathon).");
-    r.objectif.but = r.objectif.but ?? "finir";
+    r.objectif = r.objectif ?? {};
+
+    // ═══════════════════════════════════════════════════════════════════════════════════════════
+    // 🔴 « JE COURS, SANS OBJECTIF DE COURSE » — le refus qui a bloqué le premier utilisateur réel
+    // ═══════════════════════════════════════════════════════════════════════════════════════════
+    //
+    // Le moteur levait ici : « Running sans distance objectif (5k / 10k / semi / marathon). »
+    // **Il supposait que si tu cours, c'est pour préparer une course.** C'est faux, et c'est le
+    // défaut le plus élémentaire de tout le module : la majorité des gens qui courent **ne
+    // préparent aucune course**. Ils courent.
+    //
+    // **Ce n'était pas une donnée qui manquait. C'était une FONCTIONNALITÉ qui manquait.**
+    //
+    // Deux champs, deux questions **indépendantes** — et le moteur les confondait :
+    //   • `objectif.distance` → « quelle distance veux-tu préparer ? » → **facultative**. Sans elle,
+    //     la pondération des perfs perd son ancrage (toutes les distances pèsent pareil) et
+    //     l'équivalence chrono n'a plus de cible. **Rien d'autre ne casse.**
+    //   • `course.date` → « quand ? » → **c'est ELLE, et elle seule, qui rend une PÉRIODISATION
+    //     possible.** Sans date : **pas d'affûtage, pas de pic, pas de chrono cible.**
+    //
+    // → `objectif.type` : **`"course"`** (une course datée) ou **`"base"`** (entretien / construction
+    //   de base). Le type est **DÉDUIT de la présence d'une date**, pas déclaré — parce qu'il n'y a
+    //   rien à deviner : soit il y a une date, soit il n'y en a pas.
+    const aUneCourseDatee = Boolean(r.course?.date);
+    r.objectif.type = aUneCourseDatee ? "course" : "base";
+
+    // La distance reste **validée** si elle est déclarée : accepter « 15k » en silence serait pire
+    // que de l'accepter tout court. Ce qui change, c'est qu'elle a le droit d'être **absente**.
+    if (r.objectif.distance != null && !DISTANCES[r.objectif.distance]) {
+      throw new Error(
+        `Distance objectif « ${r.objectif.distance} » inconnue : attendu ${Object.keys(DISTANCES).join(" | ")}, ` +
+          `ou **rien du tout** (\`null\` / champ absent) si tu ne prépares aucune course — c'est un cas légitime, ` +
+          `le moteur génère alors un **plan de base**.`
+      );
+    }
+
+    if (!aUneCourseDatee) {
+      r.objectif.but = r.objectif.but ?? "construire ta base";
+      // 🔴 CE QUE CE PLAN EST, ET CE QU'IL N'EST PAS. Dit une fois, en toutes lettres, dans les
+      // hypothèses — parce qu'un plan sans échéance ressemble à s'y méprendre à un plan raté.
+      p.hypotheses.push(
+        (r.objectif.distance
+          ? `🏃 **Tu vises un ${DISTANCES[r.objectif.distance].label}, mais tu n'as déclaré AUCUNE DATE de course** ` +
+            `(\`running.course.date\`). Le moteur ne périodise donc pas vers elle : il génère un **plan de BASE**. ` +
+            `La distance sert quand même — elle **pondère** tes performances (la plus proche de ton objectif pèse le ` +
+            `plus, veille/03 §2). `
+          : `🏃 **Tu cours sans objectif de course, et c'est LÉGITIME** — ce n'est pas une donnée qui te manque. ` +
+            `Le moteur génère un **plan de BASE** : du volume, de l'allure facile, une progression prudente. `) +
+          `**Ce qu'il N'EST PAS, et le moteur ne le fabriquera pas : il n'y a ni AFFÛTAGE, ni PIC, ni CHRONO CIBLE.** ` +
+          `Ces trois choses n'ont de sens que par rapport à **une date** — sans elle, les inventer serait mimer une ` +
+          `préparation qui ne prépare rien. **Déclare \`running.course.date\` le jour où tu auras une course** : le ` +
+          `moteur bascule seul en plan périodisé.`
+      );
+    } else {
+      r.objectif.but = r.objectif.but ?? "finir";
+      if (!r.objectif.distance) {
+        throw new Error(
+          "Course DATÉE sans distance objectif : impossible de dimensionner une préparation (durée de plan, longue " +
+            "sortie, affûtage en dépendent). Renseigne `running.objectif.distance` " +
+            `(${Object.keys(DISTANCES).join(" | ")}), ou retire \`running.course.date\` — le moteur générera alors un ` +
+            "**plan de base**, qui lui n'a besoin d'aucune distance."
+        );
+      }
+    }
 
     // --- TERRAIN & DÉNIVELÉ ---------------------------------------------------------------
     // ⚠️ Le terrain est **DÉCLARÉ**, jamais deviné. Le moteur pourrait être tenté de conclure
@@ -284,9 +356,29 @@ export function normaliserPersona(brut, { aujourdhui = new Date() } = {}) {
       r.niveau = "intermediaire";
       p.hypotheses.push("Niveau course non renseigné → défaut intermédiaire — à confirmer.");
     }
-    if (!r.jours_par_semaine) {
+    // ⚠️ **Deux champs déclarent la même chose, et ils peuvent se contredire.** Un pratiquant de
+    // salle qui court déclare souvent ses sorties dans `muscu.hybride.course_par_semaine` (c'est le
+    // champ historique) **et** possède un bloc `running`. Le moteur **lit les deux** : il ne va pas
+    // supposer 3 sorties/sem alors que l'autre moitié du persona en déclare 1. Et si les deux
+    // parlent **et se contredisent**, il ne choisit pas en silence — il le DIT.
+    const coursesHybride = Number(p.muscu?.hybride?.course_par_semaine ?? 0) || null;
+    if (!r.jours_par_semaine && coursesHybride) {
+      r.jours_par_semaine = coursesHybride;
+      p.hypotheses.push(
+        `Jours de course/sem non renseignés dans \`running\` → **${coursesHybride}** repris de ` +
+          `\`muscu.hybride.course_par_semaine\`. Les deux champs disent la même chose : le moteur lit celui qui est ` +
+          `rempli plutôt que d'appliquer un défaut qui contredirait ton propre persona.`
+      );
+    } else if (!r.jours_par_semaine) {
       r.jours_par_semaine = 3;
       p.hypotheses.push("Jours de course/sem non renseignés → défaut 3 j — à confirmer.");
+    } else if (coursesHybride && coursesHybride !== r.jours_par_semaine) {
+      p.hypotheses.push(
+        `⚠️ **Contradiction dans ton persona** : \`running.jours_par_semaine\` = **${r.jours_par_semaine}**, mais ` +
+          `\`muscu.hybride.course_par_semaine\` = **${coursesHybride}**. Le moteur retient **${r.jours_par_semaine}** ` +
+          `(le bloc \`running\` fait foi — c'est lui qui planifie), et il **ne fusionne pas** deux chiffres qui se ` +
+          `contredisent. Aligne-les.`
+      );
     }
     // ═══ PERFORMANCES — un HISTORIQUE, plus une référence unique ═══════════════════════════════
     //
@@ -329,12 +421,35 @@ export function normaliserPersona(brut, { aujourdhui = new Date() } = {}) {
       );
     }
     if (!r.volume_actuel_km_sem) {
-      r.volume_actuel_km_sem = { "5k": 15, "10k": 20, semi: 25, marathon: 30 }[r.objectif.distance] ?? 20;
-      p.hypotheses.push(`Volume actuel non renseigné → départ prudent à ${r.volume_actuel_km_sem} km/sem — à confirmer (donnée critique pour la progressivité).`);
+      if (r.objectif.type === "base") {
+        // 🔴 **LE MOTEUR NE DÉRIVE PAS TON VOLUME HEBDO DE TA PLUS LONGUE SORTIE — et c'est délibéré.**
+        // Il connaît peut-être une sortie de 16 km (`performances[]`, rôle « capacité de volume »).
+        // En conclure « donc 16 km/semaine » serait **exactement l'erreur de catégorie** que ce moteur
+        // vient de réparer ailleurs : **une sortie n'est pas un volume**, comme une sortie
+        // d'entraînement n'est pas une performance. Il part donc **bas**, et il **réclame la donnée**.
+        r.volume_actuel_km_sem = Math.max(KM_PAR_SORTIE_PRUDENT, r.jours_par_semaine * KM_PAR_SORTIE_PRUDENT);
+        p.hypotheses.push(
+          `⚠️ **\`running.volume_actuel_km_sem\` non renseigné** → départ **très prudent** à ` +
+            `**${r.volume_actuel_km_sem} km/sem** (${r.jours_par_semaine} sortie(s) × ${KM_PAR_SORTIE_PRUDENT} km). ` +
+            `**C'est un chiffre d'attente, pas une mesure** — et c'est la **donnée la plus rentable que tu puisses ` +
+            `donner au moteur** : toute la progressivité en dépend. ⚠️ Le moteur **refuse** de le déduire de ta plus ` +
+            `longue sortie : **une sortie n'est pas un volume hebdomadaire** (même erreur de catégorie qu'une sortie ` +
+            `d'entraînement prise pour une performance). Il préfère partir **trop bas** — un départ trop bas se ` +
+            `rattrape en quelques semaines à +10 %/sem ; un départ trop haut blesse (veille/03 §5).`
+        );
+      } else {
+        r.volume_actuel_km_sem = { "5k": 15, "10k": 20, semi: 25, marathon: 30 }[r.objectif.distance] ?? 20;
+        p.hypotheses.push(`Volume actuel non renseigné → départ prudent à ${r.volume_actuel_km_sem} km/sem — à confirmer (donnée critique pour la progressivité).`);
+      }
     }
     if (!r.longue_sortie_actuelle_km) {
-      r.longue_sortie_actuelle_km = Math.round(r.volume_actuel_km_sem * 0.35);
-      p.hypotheses.push(`Longue sortie actuelle non renseignée → estimée à ${r.longue_sortie_actuelle_km} km (~35 % du volume) — à confirmer.`);
+      // Sous 3 sorties/sem, la « longue » **EST** la sortie : lui appliquer les 35 % du volume
+      // produirait une semaine dont les kilomètres ne tomberaient nulle part.
+      r.longue_sortie_actuelle_km =
+        r.objectif.type === "base" && r.jours_par_semaine < 3
+          ? Math.round(r.volume_actuel_km_sem / r.jours_par_semaine)
+          : Math.round(r.volume_actuel_km_sem * 0.35);
+      p.hypotheses.push(`Longue sortie actuelle non renseignée → estimée à ${r.longue_sortie_actuelle_km} km (${r.jours_par_semaine < 3 && r.objectif.type === "base" ? "elle EST ta sortie" : "~35 % du volume"}) — à confirmer.`);
     }
     // ⚖️ `charge_42j_depart` : NOTRE nom pour la moyenne 42 j de la charge d'endurance. Ce que
     // TrainingPeaks appelle « CTL » est une marque déposée de Peaksware (veille/19 §3.5) — on la
@@ -379,6 +494,14 @@ export function normaliserPersona(brut, { aujourdhui = new Date() } = {}) {
   // audit de veille (14 §P2). Il ne mentait pas : il se taisait. Sur un produit de santé, c'est
   // équivalent — on ne peut pas corriger ce qu'on ne vous dit pas.
   //
+  // --- LE MODE — muscu seule / course seule / hybride. **DÉCLARÉ**, jamais deviné (mode.js). ------
+  // Il est calculé **après** les blocs muscu/running (il les lit) et **avant** les angles morts.
+  // ⚠️ Il n'AJOUTE aucune règle : il **nomme** ce que le moteur est en train de faire. La seule
+  // chose que le mode `hybride` « ajoute » — la contrainte de placement jambes ↔ course — existait
+  // déjà ; elle n'était simplement **rattachée à rien de nommable**.
+  p.mode = modeDe(p);
+  if (p.mode.code === "muscu" && p.mode.course_hors_bloc) p.hypotheses.push(p.mode.specifique);
+
   // ⚠️ Ces angles morts n'AJOUTENT aucune règle de programmation (pas de volume baissé, pas de
   // coefficient inventé) : ils DÉCLARENT. C'est l'ADR 0006 — mieux vaut refuser que d'inventer.
   p.angles_morts = anglesMorts(p);

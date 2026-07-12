@@ -421,6 +421,12 @@ function normaliserExercice(brut, slot, nomSlot) {
     slot: nomSlot,
     pattern: slot.pattern,
     type: brut.mechanic === "isolation" ? "isolation" : "compose",
+    // 🔴 ISOMÉTRIQUE — le dataset le DIT (`force: "static"`), on ne le devine pas.
+    // Conséquence directe sur le carnet : `W = F × d`, et **`d = 0`**. Un gainage ne produit
+    // AUCUN travail mécanique — il n'a donc pas de tonnage, et lui en fabriquer un serait
+    // inventer un chiffre. Son effort est réel : il se compte en **secondes**, et il vit déjà
+    // dans la bonne unité (la jauge sRPE de `charge.js`). Voir `app/js/seance.js` (`tonnage`).
+    isometrique: brut.force === "static",
     muscles: musclesDe(brut, slot.pattern),
     niveau_dataset: brut.level,
     equipement: equipementDe(brut),

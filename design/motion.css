@@ -1,0 +1,177 @@
+/* ═══════════════════════════════════════════════════════════════════
+   motion.css — le canal de confirmation, et rien d'autre.
+   prepa-physique · design system · zéro dépendance, zéro build.
+
+   Dépend de tokens.css (à lier AVANT ce fichier). Aucune valeur en dur.
+   `tokens.css` porte les VALEURS ; ce fichier porte le COMPORTEMENT.
+
+   ── Pourquoi ce fichier existe ─────────────────────────────────────
+   En salle : pas de vibration fiable (PWA iOS ne la garantit pas), pas
+   de son (on ne le promet pas — C5), écran posé sur le banc à un mètre,
+   doigt moite. **Le canal visuel est le seul canal de confirmation dont
+   nous disposons — et il était vide.** Audit des 5 écrans avant ce
+   fichier : ZÉRO `scale()` sur `:active`, un seul `:active` dans tout le
+   produit. Le geste le plus répété de l'application ne répondait pas.
+
+   Notre KPI « 1 tap » (RECHERCHE-ux.md, P14) comptait les taps de
+   l'utilisateur VERS l'app. Il n'a jamais vérifié que l'app RÉPOND.
+   Un tap dont on doute, on le redonne — et le second tap valide la
+   série suivante avec un RIR faux.
+
+   ── ⚠️ LA RÈGLE N'EST PAS « PAS D'ANIMATION » ──────────────────────
+   C'est une **table de FRÉQUENCE**, et elle coupe dans les deux sens :
+
+   | Ce qu'on fait          | Fréquence      | Ce que ça mérite            |
+   |------------------------|----------------|-----------------------------|
+   | Valider une série      | 17×/séance     | 🔒 RIEN — que le press      |
+   | Ouvrir un « Pourquoi ?»| quelques fois  | ✅ elle monte, elle suit le doigt |
+   | Terminer une séance    | 1×             | ✅✅ un vrai moment          |
+   | Onboarding             | 1× dans sa vie | ✅✅ la première impression  |
+
+   **Le budget de mouvement se DÉPENSE là où la fréquence est basse et le
+   sens est haut. Il se COUPE là où la fréquence est haute.**
+
+   🔴 Donc, et seulement ici : **AUCUNE animation d'agrément sur la
+   validation d'une série.** Pas de coche qui se dessine, pas de rebond,
+   pas de confettis. 17 séries, 6×/semaine : ce qui charme à la 1ʳᵉ série
+   est une FRICTION à la 17ᵉ (I1). Sur ce geste-là, ce fichier ajoute
+   exactement une chose : la preuve que le tap est passé.
+   Ailleurs — la feuille qui monte, l'artefact de fin de séance qui se
+   pose — le mouvement est **mérité**, et l'appauvrir serait une faute
+   symétrique. Ne pas confondre « sobre » et « mort ».
+
+   Le retour de press, lui, n'est même pas une animation : c'est de la
+   **latence perçue**. Il est SOUS la table de fréquence, pas dedans —
+   Emil s'en exempte lui-même et le met sur tout élément pressable, y
+   compris ceux qu'on presse cent fois par jour.
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* ═══ 1. LE RETOUR DE PRESS ═══════════════════════════════════════════
+   « The interface should feel as if it's listening to the user. »
+   3 % sous le doigt, en --dur-press. Invisible, et ça change tout.
+
+   Contrôle des cibles : le plus petit pressable du produit fait 44 px
+   (why-link, sheet-close 48, boutons RIR 56). 44 × 0,97 = 42,7 px de
+   RENDU — mais la cible de HIT-TEST ne bouge pas : un transform ne
+   change pas la boîte de survol pendant le press, et l'élément est
+   déjà sous le doigt. Aucune cible n'est perdue.
+
+   ⚠️ Piège de cascade : une règle d'écran qui déclare sa PROPRE
+   `transition` sur un bouton (spécificité de classe > `button`) écrase
+   celle-ci et le press devient instantané. Un tel bouton doit inclure
+   `transform var(--dur-press) var(--ease-out)` dans sa transition.
+   `audit.js` le vérifie. */
+button,
+[role="button"],
+.press {
+  transition: transform var(--dur-press) var(--ease-out);
+}
+button:active,
+[role="button"]:active,
+.press:active {
+  transform: scale(0.97);
+}
+/* Un bouton désactivé ne « répond » pas : il ne ment pas non plus. */
+button:disabled:active,
+[role="button"][aria-disabled="true"]:active {
+  transform: none;
+}
+
+/* ═══ 2. LES FEUILLES — elles montent, elles n'apparaissent pas ═══════
+   Avant : `hidden` + `[hidden] { display: none }`. La feuille
+   « Pourquoi ? » — le pattern signature du produit, celui qui porte la
+   transparence (philosophy.md, règle 4) — TÉLÉPORTAIT.
+
+   Piloté par `data-state` (posé par sheet.js), jamais par une classe :
+   nutrition a deux familles de feuilles (.sheet et .wsheet), les autres
+   écrans une seule. L'attribut est le seul contrat commun.
+
+   Asymétrie assumée (I10) : 260 ms à l'entrée (l'utilisateur DÉCIDE de
+   lire), 160 ms à la sortie (il a fini, il retourne à sa série). On ne
+   fait jamais attendre quelqu'un qui s'en va. */
+[data-scrim] {
+  opacity: 1;
+  transition: opacity var(--dur-sheet) var(--ease-out);
+}
+[data-sheet] {
+  transform: translateY(0);
+  transition: transform var(--dur-sheet) var(--ease-sheet);
+}
+
+/* Entrée : l'état de départ, posé un frame avant `open`. */
+[data-scrim][data-state="enter"] { opacity: 0; }
+[data-scrim][data-state="enter"] [data-sheet] { transform: translateY(100%); }
+
+/* Sortie : plus rapide, et non cliquable pendant qu'elle s'en va. */
+[data-scrim][data-state="closing"] {
+  opacity: 0;
+  pointer-events: none;
+  transition-duration: var(--dur-exit);
+}
+[data-scrim][data-state="closing"] [data-sheet] {
+  transform: translateY(100%);
+  transition-duration: var(--dur-exit);
+}
+
+/* Pendant le glissé, sheet.js pose `transform` en inline et coupe la
+   transition : le doigt pilote au pixel, rien ne s'interpose. */
+[data-scrim][data-state="dragging"],
+[data-scrim][data-state="dragging"] [data-sheet] { transition: none; }
+
+/* ── La poignée : une affordance qui ne ment plus ────────────────────
+   38 × 4 px DESSINÉS (le trait), 44 px TOUCHABLES (la cible) — c'est la
+   règle de Vaul : `max(100%, 2.75rem)`. Le trait est décoratif ; la
+   cible est réelle. `touch-action: none` garantit que le glissé sur la
+   poignée n'est JAMAIS volé par le scroll de la feuille. */
+[data-sheet-grip] {
+  position: relative;
+  touch-action: none;
+  cursor: grab;
+}
+[data-sheet-grip]::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: max(100%, 2.75rem);
+  height: 2.75rem;
+}
+[data-scrim][data-state="dragging"] [data-sheet-grip] { cursor: grabbing; }
+
+/* ═══ 3. MOUVEMENT RÉDUIT ═════════════════════════════════════════════
+   « Reduced motion means FEWER AND GENTLER animations, NOT ZERO. Keep
+   opacity and color transitions that aid comprehension. Remove movement
+   and position animations. » — la doctrine.
+   Sa propre lib (Sonner) la viole : elle coupe TOUT, `transition: none
+   !important`, y compris les fondus qu'elle demande de garder. On suit
+   la doctrine, pas le code.
+
+   Donc ici : le déplacement disparaît, la CONFIRMATION reste.
+   · Press : plus de scale — mais un fondu. Le seul canal de retour du
+     produit ne peut pas être supprimé par une préférence d'accessibilité :
+     ce serait rendre l'app muette à qui demandait juste moins de mouvement.
+   · Feuille : elle perd son DÉPLACEMENT, pas son EXISTENCE. Elle se
+     fond. Sans ça, elle se remettrait à téléporter — et on aurait
+     reproduit le bug de Sonner après l'avoir identifié. (I11) */
+@media (prefers-reduced-motion: reduce) {
+  button,
+  [role="button"],
+  .press {
+    transition: opacity var(--dur-press) var(--ease-out);
+  }
+  button:active,
+  [role="button"]:active,
+  .press:active {
+    transform: none;
+    opacity: 0.62;
+  }
+
+  [data-sheet] { transition: opacity var(--dur-sheet) var(--ease-out); }
+  [data-scrim][data-state="enter"] [data-sheet],
+  [data-scrim][data-state="closing"] [data-sheet] {
+    transform: none;
+    opacity: 0;
+  }
+  [data-scrim][data-state="closing"] [data-sheet] { transition-duration: var(--dur-exit); }
+}

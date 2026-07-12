@@ -19,7 +19,7 @@
  * portée de CONTRÔLE DE PAGES, pas d'interception d'URL.
  */
 
-const VERSION = 'v4';
+const VERSION = 'v5';
 const CACHE = `pp-shell-${VERSION}`;
 
 /** Le shell : tout ce qu'il faut pour que l'app démarre hors ligne. */
@@ -39,6 +39,12 @@ const SHELL = [
   './js/programme.js',
   './js/valeurs.js',
   './js/amorce.js',
+
+  // 🔴 L'écran de séance. C'est LE moment où l'app sert : en salle, en sous-sol,
+  // hors ligne. Un de ces deux modules absent du précache, et le geste central
+  // du produit ne s'ouvre pas — exactement quand on en a besoin.
+  './js/seance.js',
+  './js/ecran-seance.js',
   './fonts/fonts.css',
   './fonts/hanken-grotesk-latin.woff2',
   './fonts/hanken-grotesk-latin-ext.woff2',
@@ -50,8 +56,14 @@ const SHELL = [
   './icons/apple-touch-icon.png',
 
   // Le design system, point de vérité unique — on ne le duplique pas, on le cache.
+  // `motion.*` et `sheet.js` font monter la feuille (le « pourquoi » derrière un
+  // tap) et donnent le retour de press sur iOS. Sans eux en cache, la feuille ne
+  // s'ouvre plus hors ligne — et c'est là que TOUTE la transparence du produit vit.
   '../design/tokens.css',
   '../design/states.css',
+  '../design/motion.css',
+  '../design/motion.js',
+  '../design/sheet.js',
 
   // 🔴 LE MOTEUR. On le cache, on ne le copie pas : `src/lib/` reste la source
   // unique de vérité, et c'est ce même fichier que les 129 tests couvrent.
@@ -68,6 +80,11 @@ const SHELL = [
   '../src/lib/placement.js',
   '../src/lib/denivele.js',
   '../src/lib/cadence.js',
+
+  // `avis.js` : le moteur y rend ses décisions en DONNÉES (l'essentiel, le
+  // pourquoi, la source — séparés). C'est ce que l'écran de séance affiche
+  // derrière un tap. Absent du cache → pas d'écran de séance hors ligne.
+  '../src/lib/avis.js',
 
   // Les données. `exercises.json` (848 Ko, free-exercise-db, domaine public) est
   // le référentiel : sans lui, pas de programme. Il est gros MAIS téléchargé une

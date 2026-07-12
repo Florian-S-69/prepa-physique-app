@@ -1,6 +1,6 @@
 // CHARGE — « On additionne la CHARGE. On n'additionne pas la FATIGUE. »
 //
-// Décision : ADR 0006 (specs/adr/0006-charge-unifiee-force-endurance.md), validée par le propriétaire du produit
+// Décision : ADR 0006 (specs/adr/0006-charge-unifiee-force-endurance.md), validée par le propriétaire
 // le 2026-07-11. Ce module en est l'implémentation. Il est PUR (aucune I/O).
 //
 // ── Ce qui a changé, et pourquoi ────────────────────────────────────────────────────────────
@@ -94,11 +94,11 @@ const N_MIN_CALIBRATION = 3;
 // 🔴 **Ce qu'on a trouvé le 2026-07-11 (batterie adverse).** Rien ne l'interdisait. Le journal porte
 // pourtant un champ `persona`, et **aucun consommateur ne le lisait** :
 //
-//     node src/cli.js recaler data/personas/<personne-A>.json data/exemples/journal-<personne-B>-exemple.json
-//     ✔ out/persona-personne-b-recale.json
+//     node src/cli.js recaler data/personas/<personne-b>.json data/exemples/journal-<personne-a>-exemple.json
+//     ✔ out/persona-<personne-b>-recale.json
 //       Volume de départ (km/sem) : 30 -> 14
 //
-// Le moteur a **réécrit le persona d'une personne avec les données d'entraînement d'une AUTRE**, sans un
+// Le moteur a **réécrit le persona de la personne B avec les données d'entraînement du propriétaire**, sans un
 // mot, et a affiché une coche verte. Sur un persona muscu, le même chemin écrit les **charges de
 // travail** d'un autre humain dans `charges_reference` — c'est-à-dire qu'il prescrit à un débutant
 // le développé couché à 90 kg de quelqu'un d'autre. **C'est le pire défaut du moteur.**

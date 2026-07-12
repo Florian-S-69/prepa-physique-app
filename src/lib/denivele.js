@@ -412,7 +412,19 @@ export function deniveleCourse(objectif = {}) {
  * n'ont **rien** à voir entre elles. Les confondre serait laisser croire qu'un silence est une
  * validation.
  */
-export function raisonNonPlanifie({ terrain, depart_m, eviter, zones = [] }) {
+export function raisonNonPlanifie({ terrain, depart_m, eviter, zones = [], sans_course = false }) {
+  // ⚠️ **Le COÛT n'est pas le même selon qu'il y a une course, ou pas.** Sans course datée, dire
+  // « ce plan ne te prépare pas à ta course » serait **faux** : il n'y a pas de course. Ce qui est
+  // vrai, en revanche, c'est que **le plan ne construit pas de base trail** — et c'est ça qu'il faut
+  // dire. Deux situations, deux phrases. Les confondre, ce serait servir un avertissement qui ne
+  // parle de rien.
+  const coutActif = sans_course
+    ? "ce plan **ne construit PAS ta base en dénivelé**"
+    : "si ta course a du dénivelé, ce plan ne t'y prépare PAS";
+  const coutDepart = sans_course
+    ? "ce plan est un plan de PLAT, et il ne construit PAS ta base en dénivelé"
+    : "ce plan est un plan de PLAT, et il ne te prépare pas à ta course";
+
   if (eviter) {
     return {
       code: "limitation_active",
@@ -421,7 +433,7 @@ export function raisonNonPlanifie({ terrain, depart_m, eviter, zones = [] }) {
         `⛰️🚫 **Aucun dénivelé dans ce plan** — **${zones.join(", ")}** est une limitation **ACTIVE**. ` +
         `**Et la raison est la DESCENTE, pas la montée** : elle est **EXCENTRIQUE** (ADR 0006 §1.5), elle produit des ` +
         `**dommages musculaires**, et c'est elle qui charge l'articulation. ` +
-        `🔴 **Le coût est réel, et le moteur ne te le cache pas : si ta course a du dénivelé, ce plan ne t'y prépare PAS.** ` +
+        `🔴 **Le coût est réel, et le moteur ne te le cache pas : ${coutActif}.** ` +
         `C'est un **choix de sécurité assumé**, pas une conclusion scientifique — aucune source ne chiffre le D+ « sûr » ` +
         `d'un genou douloureux, donc le moteur n'invente pas de chiffre. Fais examiner la zone : c'est ce qui rouvrira le ` +
         `dénivelé, pas un réglage de plan.`,
@@ -444,7 +456,13 @@ export function raisonNonPlanifie({ terrain, depart_m, eviter, zones = [] }) {
         `(le D+ que tu fais **déjà** par semaine). ` +
         `**Le moteur n'inventera pas ton point de départ** : aucun D+ « normal » n'existe, et **aucun seuil n'est sourcé** — ` +
         `un chiffre de départ fabriqué serait soit inutile, soit dangereux. ` +
-        `🔴 **En attendant, ce plan est un plan de PLAT, et il ne te prépare pas à ta course.** Tu le sais maintenant.`,
+        `🔴 **En attendant, ${coutDepart}.** Tu le sais maintenant.` +
+        (sans_course
+          ? ` _(C'est **une ligne** à remplir, et c'est la seule chose qui te sépare d'un vrai plan de base en dénivelé : ` +
+            `le moteur sait le construire — **sans échéance**, il progresse en **paliers RELATIFS** à ce que tu encaisses ` +
+            `déjà, une semaine sur deux, en alternance avec le volume. Il n'a besoin d'**aucune date**, seulement d'un ` +
+            `**point de départ**.)_`
+          : ""),
     };
   }
   return null;

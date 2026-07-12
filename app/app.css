@@ -13,6 +13,23 @@
 
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 
+/* 🔴 `[hidden]` DOIT gagner. La règle du navigateur (`[hidden] { display: none }`)
+   a la spécificité d'un simple attribut : **la moindre classe la bat**. Tout
+   composant qui pose son propre `display` (flex, grid…) redevient donc visible
+   alors que le JS le croit caché — et le JS, lui, ne voit rien : `el.hidden` vaut
+   toujours `true`.
+
+   ⚠️ Attrapé au NAVIGATEUR, pas par un test (2026-07-12) : `.scrim { display: flex }`
+   affichait le voile de la feuille EN PERMANENCE par-dessus l'écran de séance —
+   tout l'écran assombri, un bouton « Fermer » flottant. Seize assertions
+   JavaScript passaient au vert pendant ce temps, parce qu'elles interrogeaient
+   `.hidden`, qui était bien `true`.
+
+   `app.css` rustinait ce trou au cas par cas (`.porte[hidden]`, `.porte-etapes[hidden]`…) :
+   une règle qu'il fallait **se rappeler d'écrire** à chaque nouveau composant. Une
+   règle qu'on doit se rappeler d'écrire est une règle qui sera oubliée. */
+[hidden] { display: none !important; }
+
 html, body {
   margin: 0;
   height: 100%;
@@ -258,6 +275,75 @@ main > section {
 .carte-actions { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
 .carte-actions .state-btn { flex: 1; min-width: 140px; }
 
+/* ── Un chiffre du profil, MODIFIABLE AU DOIGT ─────────────────────────
+   « Je ne peux pas rentrer mes charges » — règle 1 du juge : un chiffre qui décrit
+   l'entraînement de l'utilisateur et qu'on ne peut que LIRE fait de l'app un document.
+   Le poids de corps en était un : il porte une large part du tonnage, et aucun écran ne
+   le laissait corriger. Même boîte que le quai de saisie de la séance (`.sc-stepper`) —
+   c'est le même geste, il doit avoir la même allure. Cible ≥ 46 px : c'est un doigt. */
+.champ-inline { display: flex; flex-direction: column; gap: var(--sp-2); }
+.champ-inline-lab {
+  font-size: var(--fs-caption);
+  letter-spacing: var(--ls-caption);
+  text-transform: uppercase;
+  color: var(--text-45);
+  font-weight: 700;
+}
+.champ-inline-ligne { display: flex; align-items: center; gap: var(--sp-2); }
+.champ-inline-ligne .state-btn { flex-shrink: 0; }
+.champ-inline-boite {
+  display: flex; align-items: center;
+  flex: 1; min-width: 0;
+  padding-right: var(--sp-3);
+  background: var(--fill-3);
+  border: 1px solid var(--line-8);
+  border-radius: var(--r-input);
+}
+.champ-inline-boite:focus-within { border-color: var(--line-12); background: var(--fill-6); }
+.champ-inline-boite input {
+  flex: 1; min-width: 0;
+  height: 46px;
+  padding: 0 var(--sp-3);
+  background: none; border: none;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-metric);
+  font-weight: 600;
+}
+.champ-inline-boite input:focus { outline: none; }
+.champ-inline-unite {
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-size: var(--fs-body-s);
+  color: var(--text-45);
+}
+
+/* Le sélecteur d'exercice de l'OBJECTIF. Même boîte, même hauteur de doigt (46 px) que les
+   champs ci-dessus : c'est le même geste de saisie, il doit avoir la même allure.
+   ⚠️ Pas de champ libre pour l'exercice — une faute de frappe deviendrait une cible « inconnue »
+   que le moteur refuserait. Un refus mérité, mais évitable. */
+.champ-select {
+  width: 100%;
+  height: 46px;
+  padding: 0 var(--sp-3);
+  background: var(--fill-3);
+  border: 1px solid var(--line-8);
+  border-radius: var(--r-input);
+  color: var(--text);
+  font-size: var(--fs-label);
+  font-weight: 600;
+}
+.champ-select:focus { outline: none; border-color: var(--line-12); background: var(--fill-6); }
+
+/* Le champ DATE : le chiffre mono à `--fs-metric` déborde de la boîte (« 31/12/202( » — l'année
+   coupée en deux, vue à l'écran). Il n'a pas besoin de la taille d'une charge : ce n'est pas un
+   chiffre qu'on lit d'un coup d'œil au milieu d'une série, c'est une date qu'on pose une fois. */
+.champ-inline-boite--date input {
+  font-size: var(--fs-label);
+  padding-right: var(--sp-2);
+}
+
 /* ── Ligne de statut (pastille + texte) ───────────────────────────── */
 .ligne-statut { display: flex; align-items: center; gap: var(--sp-3); }
 .statut-pastille {
@@ -268,6 +354,8 @@ main > section {
 }
 .statut-pastille[data-etat="ok"] { background: var(--acc); box-shadow: 0 0 0 4px var(--acc-14); }
 .statut-pastille[data-etat="ko"] { background: var(--danger); box-shadow: 0 0 0 4px var(--danger-12); }
+/* ADAPTÉ : la cible tient, mais le terrain est sous contrainte. Ni un feu vert, ni un refus. */
+.statut-pastille[data-etat="attention"] { background: var(--text-74); box-shadow: 0 0 0 4px var(--fill-8); }
 .statut-txt { font-size: var(--fs-label); font-weight: 700; }
 
 /* ── Quota ────────────────────────────────────────────────────────── */
@@ -288,33 +376,12 @@ main > section {
 }
 .mentions code { color: var(--text-45); }
 
-/* ═══ CHRONO ══════════════════════════════════════════════════════ */
-
-.chrono-carte { align-items: stretch; gap: var(--sp-5); }
-
-.chrono-affichage {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: var(--sp-1);
-  padding: var(--sp-4) 0 0;
-}
-.chrono-valeur {
-  font-family: var(--font-mono);
-  font-size: 64px;
-  font-weight: 600;
-  line-height: 1;
-  letter-spacing: -2px;
-  font-variant-numeric: tabular-nums; /* le chiffre ne doit pas sautiller */
-}
-.chrono-etat {
-  font-size: var(--fs-body-s);
-  font-weight: 600;
-  color: var(--text-45);
-}
-/* Repos terminé : l'écran doit le crier, même de loin, même posé sur un banc. */
-.chrono-carte[data-etat="fini"] .chrono-valeur { color: var(--acc); }
-.chrono-carte[data-etat="fini"] .chrono-etat { color: var(--acc); }
+/* ═══ JAUGE ══════════════════════════════════════════════════════
+   Rescapée de l'écran « Repos », retiré le 2026-07-12 : elle sert encore la
+   barre de QUOTA de l'écran Données. Le reste du chrono d'onglet (affichage
+   64 px, presets 1:00…5:00, ±30 s, Arrêter) est parti avec son écran — le
+   chrono de la séance a le sien, dans la barre d'action.
+   ═══════════════════════════════════════════════════════════════ */
 
 .chrono-jauge {
   height: 6px;
@@ -331,40 +398,6 @@ main > section {
 @media (prefers-reduced-motion: reduce) {
   .chrono-jauge-fill { transition: none; }
 }
-
-.chrono-presets { display: flex; gap: var(--sp-2); }
-.chrono-preset {
-  flex: 1;
-  min-height: 52px; /* ≫ 44 px : on l'appuie avec des mains moites, en série */
-  border-radius: var(--r-input);
-  border: 1px solid var(--line-10);
-  background: var(--fill-4);
-  color: var(--text-74);
-  font-family: var(--font-mono);
-  font-size: var(--fs-label);
-  font-weight: 600;
-}
-.chrono-preset:hover { background: var(--fill-8); color: var(--text); }
-.chrono-preset[aria-pressed="true"] {
-  background: var(--acc);
-  border-color: transparent;
-  color: var(--acc-ink);
-}
-
-.chrono-controles { display: flex; gap: var(--sp-2); }
-.chrono-controles[hidden] { display: none; }
-.chrono-ctrl {
-  flex: 1;
-  min-height: 48px;
-  border-radius: var(--r-input);
-  border: 1px solid var(--line-10);
-  background: var(--fill-4);
-  color: var(--text-74);
-  font-size: var(--fs-body);
-  font-weight: 700;
-}
-.chrono-ctrl:hover { background: var(--fill-8); color: var(--text); }
-.chrono-ctrl--stop { color: var(--danger); border-color: var(--danger-30); }
 
 /* ═══ ONGLETS ═════════════════════════════════════════════════════ */
 
@@ -731,3 +764,839 @@ main > section {
 .exo-charge-vide { font-size: var(--fs-body); color: var(--text-45); font-style: italic; }
 .exo-consigne, .exo-alt { margin: 0; font-size: var(--fs-body-s); line-height: 1.5; color: var(--text-50); }
 .exo-alt b { color: var(--text-74); font-weight: 700; }
+
+/* ═══════════════════════════════════════════════════════════════════
+   ÉCRAN DE SÉANCE — le geste central (~17 taps/séance, 6×/semaine)
+
+   Deux fautes que cette feuille de style existe pour empêcher :
+
+   1. **La cible du geste le plus répété ne doit JAMAIS bouger.** Si les
+      séries validées s'empilent au-dessus du bouton, le pouce doit
+      re-viser à chaque fois. → `.sc-bar` est ANCRÉE en bas, fixe ;
+      l'historique défile derrière elle. Le flux lui réserve sa hauteur
+      exacte (`--sc-bar-h`, posée par le JS).
+
+   2. **Un seul aplat d'accent par écran**, et il est réservé à
+      l'ACTION : le bloc « Valider · RIR ». Tout le reste est neutre —
+      chiffres compris. Un estimé n'a JAMAIS droit à l'accent (le
+      garde-fou est dans la section « taxonomie » plus haut).
+
+   Animation : coupée sur le geste répété (valider une série), dépensée
+   sur ce qui n'arrive QU'UNE fois (le bilan de fin de séance).
+   ═══════════════════════════════════════════════════════════════════ */
+
+:root { --sc-bar-h: 0px; }
+
+/* Pendant l'effort : zéro navigation. Le bas de l'écran est l'ACTION,
+   pas un menu. La barre d'onglets rend sa place à la barre d'action. */
+body.en-seance .onglets { display: none; }
+body.en-seance main { padding-bottom: calc(var(--sc-bar-h) + var(--sp-4)); }
+
+/* ── En-tête collant ─────────────────────────────────────────────── */
+.sc-top {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  margin: 0 calc(-1 * var(--sp-4));
+  padding: var(--sp-2) var(--sp-4) var(--sp-3);
+  background: var(--bg);
+  border-bottom: 1px solid var(--line-6);
+}
+.sc-head { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); }
+.sc-icone {
+  width: 44px; height: 44px;               /* 44 px : la plus petite cible du produit */
+  flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: var(--r-md);
+  background: var(--fill-6);
+  border: 1px solid var(--line-10);
+  color: var(--text);
+  font-size: 19px;
+  cursor: pointer;
+}
+/* 🔴 LA SORTIE — la contrepartie de la barre d'onglets masquée.
+   Il accepte que la navigation disparaisse pendant l'effort, mais « tant que
+   c'est bien clair dans l'écran qu'on peut en sortir ». Un « × » nu suppose que
+   l'utilisateur connaît la convention ; le mot ne suppose rien. Il reste discret
+   (pas d'accent : ce n'est pas l'action de l'écran), et la cible garde ses
+   44 px de haut. */
+.sc-sortie {
+  width: auto;
+  gap: 5px;
+  padding: 0 var(--sp-3);
+  font-size: 17px;
+}
+.sc-sortie-mot {
+  font-size: var(--fs-body-s);
+  font-weight: 700;
+  color: var(--text-74);
+}
+
+.sc-centre { text-align: center; min-width: 0; }
+.sc-nom-seance {
+  font-size: var(--fs-caption);
+  letter-spacing: var(--ls-wide);
+  text-transform: uppercase;
+  color: var(--text-45);
+  font-weight: 800;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+/* Temps de séance : DÉRIVÉ (exact) → pas d'accent. */
+.sc-ecoule {
+  font-family: var(--font-mono);
+  font-size: var(--fs-metric-s);
+  font-weight: 600;
+  color: var(--text-74);
+  font-variant-numeric: tabular-nums;
+  margin-top: 2px;
+}
+
+/* Progression : en SÉRIES, pas en exercices. « 3 exercices sur 5 » ne dit
+   rien du travail restant ; « 11 séries sur 17 », si. */
+.sc-prog { margin-top: var(--sp-3); }
+.sc-prog-ligne { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); margin-bottom: 7px; }
+.sc-prog-lab { font-size: var(--fs-meta); color: var(--text-55); font-weight: 600; }
+.sc-prog-lab .sc-n { font-family: var(--font-mono); color: var(--text); font-weight: 700; }
+.sc-eta { font-size: var(--fs-meta); color: var(--text-45); display: flex; align-items: center; gap: 4px; }
+.sc-prog-bar { height: 4px; border-radius: var(--r-pill); background: var(--fill-6); overflow: hidden; }
+.sc-prog-fill {
+  height: 100%;
+  border-radius: var(--r-pill);
+  background: var(--text-34);              /* mesuré, mais pas actionnable → neutre */
+  transition: width var(--dur-ui) var(--ease-out);
+}
+@media (prefers-reduced-motion: reduce) { .sc-prog-fill { transition: none; } }
+
+.sc-flow { padding-top: var(--sp-4); }
+
+/* ── Ce qui est FAIT : replié, une ligne ─────────────────────────── */
+.sc-passe {
+  display: flex; align-items: center; gap: var(--sp-3);
+  width: 100%; min-height: 44px;
+  padding: 11px var(--sp-4);
+  margin-bottom: 6px;
+  text-align: left;
+  background: var(--fill-2);
+  border: 1px solid var(--line-6);
+  border-radius: var(--r-input);
+  color: inherit;
+  cursor: pointer;
+}
+.sc-passe-tick {
+  width: 20px; height: 20px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: var(--r-pill);
+  background: var(--fill-8);
+  color: var(--text-55);
+  font-size: var(--fs-caption); font-weight: 800;
+}
+.sc-passe-nom { font-size: var(--fs-body); font-weight: 600; color: var(--text-74); }
+.sc-passe-agg { margin-left: auto; }
+.sc-passe.est-passe .sc-passe-nom { color: var(--text-45); text-decoration: line-through; }
+
+/* ── L'exercice COURANT, en grand ────────────────────────────────── */
+.sc-bloc { margin-top: var(--sp-5); }
+.sc-bloc-head { display: flex; align-items: flex-start; gap: var(--sp-2); }
+.sc-exo {
+  flex: 1; min-width: 0; margin: 0;
+  font-size: var(--fs-title-s);
+  font-weight: 800;
+  letter-spacing: var(--ls-title);
+}
+.sc-meta { display: flex; flex-wrap: wrap; gap: var(--sp-2); align-items: center; margin-top: 9px; }
+.sc-consigne { margin: var(--sp-3) 0 0; font-size: var(--fs-body-s); line-height: 1.5; color: var(--text-50); }
+
+/* L'ESSENTIEL de l'avis du moteur. Le POURQUOI est derrière le tap. */
+.sc-avis {
+  display: flex; align-items: center; gap: var(--sp-2);
+  width: 100%; min-height: 44px;
+  padding: var(--sp-2) var(--sp-3);
+  text-align: left;
+  background: var(--fill-3);
+  border: 1px solid var(--line-8);
+  border-left: 2px solid var(--text-34);
+  border-radius: var(--r-md);
+  color: var(--text-74);
+  font-size: var(--fs-body-s);
+  line-height: 1.4;
+  cursor: pointer;
+}
+.sc-avis b { color: var(--text-strong); font-weight: 700; }
+.sc-avis-icone { flex-shrink: 0; }
+.sc-avis-go { margin-left: auto; flex-shrink: 0; font-weight: 700; color: var(--text-45); font-size: var(--fs-meta); }
+.sc-avis-liste { display: flex; flex-direction: column; gap: var(--sp-4); margin-bottom: var(--sp-3); }
+.sc-source { margin: var(--sp-2) 0 0; font-size: var(--fs-caption); color: var(--text-40); font-family: var(--font-mono); }
+
+/* ── La table des séries — « PRÉCÉDENT » est DANS la ligne ────────── */
+.sc-grille {
+  display: grid;
+  grid-template-columns: 26px 1fr 1fr 46px 24px;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.sc-tete {
+  padding: 0 var(--sp-4) 2px;
+  margin-top: var(--sp-4);
+  font-size: var(--fs-caption);
+  letter-spacing: var(--ls-caption);
+  text-transform: uppercase;
+  color: var(--text-40);
+  font-weight: 700;
+}
+.sc-droite { text-align: right; }
+.sc-serie {
+  width: 100%; min-height: 44px;
+  padding: 9px var(--sp-4);
+  margin-top: 6px;
+  background: var(--fill-2);
+  border: 1px solid var(--line-6);
+  border-radius: var(--r-input);
+  color: inherit;
+  text-align: left;
+  font-family: inherit;
+  cursor: pointer;
+}
+.sc-idx { font-family: var(--font-mono); font-size: var(--fs-body); font-weight: 700; color: var(--text-50); }
+.sc-prec { font-family: var(--font-mono); font-size: var(--fs-body); color: var(--text-45); font-variant-numeric: tabular-nums; }
+.sc-rir { font-family: var(--font-mono); font-size: var(--fs-meta); color: var(--text-50); text-align: right; }
+.sc-etat {
+  width: 20px; height: 20px;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: var(--r-pill);
+  background: var(--fill-8);
+  color: var(--text-55);
+  font-size: var(--fs-caption); font-weight: 800;
+}
+.sc-serie.est-active { background: var(--surface); border-color: var(--acc-30); cursor: default; }
+.sc-serie.est-active .sc-etat { background: none; color: var(--text-40); }
+.sc-serie.est-edite { background: var(--surface); border-color: var(--text-50); }
+.sc-serie.est-avenir { opacity: 0.5; cursor: default; }
+.sc-serie.est-avenir .sc-etat { background: none; border: 1px dashed var(--line-12); }
+.sc-repos-log {
+  grid-column: 2 / 6;
+  margin-top: 3px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-caption);
+  color: var(--text-34);
+}
+
+.sc-add { display: flex; gap: var(--sp-2); margin-top: var(--sp-3); }
+.sc-ghost {
+  flex: 1; min-height: 44px;
+  border-radius: var(--r-md);
+  background: var(--fill-3);
+  border: 1px dashed var(--line-10);
+  color: var(--text-55);
+  font-family: inherit;
+  font-size: var(--fs-body-s);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+/* ── « Qu'on sache ce qui arrive » ────────────────────────────────── */
+#sc-avenir { margin-top: var(--sp-6); }
+.sc-avenir-lab {
+  font-size: var(--fs-caption);
+  letter-spacing: var(--ls-caption);
+  text-transform: uppercase;
+  color: var(--text-40);
+  font-weight: 800;
+  margin-bottom: var(--sp-2);
+}
+.sc-avenir-row {
+  display: flex; align-items: center; gap: var(--sp-3);
+  width: 100%; min-height: 44px;
+  padding: 10px var(--sp-4);
+  margin-bottom: 6px;
+  text-align: left;
+  background: none;
+  border: 1px solid var(--line-6);
+  border-radius: var(--r-input);
+  color: var(--text-55);
+  font-size: var(--fs-body);
+  font-weight: 600;
+  cursor: pointer;
+}
+.sc-avenir-go { margin-left: auto; font-size: var(--fs-meta); color: var(--text-40); font-weight: 700; }
+
+/* ═══════════════════════════════════════════════════════════════════
+   L'ACCUEIL — il a enfin un PROTAGONISTE
+   ═══════════════════════════════════════════════════════════════════
+   Trois cartes rigoureusement identiques — même taille, même poids, même
+   bouton vert — sous une question (« Qu'est-ce que tu fais aujourd'hui ? »).
+   **Trois blocs égaux, aucun protagoniste** : la liste symétrique là où la
+   vie ne l'est pas. C'est LE signe de la pâte IA, et l'app SAVAIT : elle
+   affichait « ta dernière séance : Push » quinze pixels plus bas.
+
+   ⚠️ La contrainte dure : « Je dois être capable d'avoir la liberté de
+   toucher et de choisir la séance que je veux à chaque fois. »
+   → La carte est plus grosse. **Les autres restent, juste dessous, à un
+     tap, sans friction et sans confirmation.** On PROPOSE, on n'enferme pas.
+   ─────────────────────────────────────────────────────────────────── */
+.sc-hero {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--sp-1);
+  width: 100%;
+  padding: var(--sp-5);
+  text-align: left;
+  background: linear-gradient(160deg, var(--surface-hero-from), var(--surface));
+  border: 1px solid var(--acc-30);
+  border-radius: var(--r-hero);
+  color: var(--text);
+  cursor: pointer;
+}
+.sc-hero-kicker {
+  font-size: var(--fs-overline);
+  font-weight: 800;
+  letter-spacing: var(--ls-overline);
+  text-transform: uppercase;
+  color: var(--acc);
+}
+/* Le protagoniste se voit AU CALIBRE, pas à la couleur : c'est le seul titre
+   de l'écran qui a la taille d'un titre. */
+.sc-hero-nom {
+  font-size: var(--fs-title);
+  font-weight: 800;
+  letter-spacing: var(--ls-title);
+  line-height: 1.15;
+}
+.sc-hero-meta { font-size: var(--fs-body-s); color: var(--text-55); }
+.sc-hero-go {
+  margin-top: var(--sp-3);
+  width: 100%;
+  min-height: 48px;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: var(--r-btn);
+  background: var(--acc);
+  color: var(--acc-ink);
+  font-size: var(--fs-label);
+  font-weight: 800;
+}
+
+/* ── Les AUTRES séances : toujours là, au même endroit, un seul tap ── */
+.sc-jours { display: flex; flex-direction: column; gap: var(--sp-2); margin-top: var(--sp-3); }
+.sc-jour {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 2px var(--sp-3);
+  width: 100%;
+  padding: var(--sp-3) var(--sp-4);
+  text-align: left;
+  background: var(--fill-3);
+  border: 1px solid var(--line-8);
+  border-radius: var(--r-md);
+  color: var(--text);
+  cursor: pointer;
+}
+.sc-jour-nom { font-size: var(--fs-body); font-weight: 700; }
+.sc-jour-meta { grid-column: 1; font-size: var(--fs-meta); color: var(--text-45); }
+.sc-jour-go {
+  grid-row: 1 / 3; grid-column: 2;
+  align-self: center;
+  font-size: var(--fs-meta); font-weight: 800;
+  color: var(--acc);
+}
+.sc-derniere-nom { font-size: var(--fs-body); font-weight: 700; }
+.sc-derniere-meta {
+  margin-top: 4px;
+  display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline;
+  font-size: var(--fs-meta);
+  color: var(--text-45);
+}
+
+/* ═══ LA BARRE D'ACTION — ancrée, fixe, dans la zone du pouce ═════ */
+.sc-bar {
+  position: fixed;
+  left: 0; right: 0; bottom: 0;
+  z-index: 40;
+  padding: var(--sp-3) var(--sp-4) calc(var(--sp-3) + env(safe-area-inset-bottom));
+  background: var(--bg);
+  border-top: 1px solid var(--line-8);
+  box-shadow: 0 -20px 44px var(--scrim);
+}
+
+/* Le chrono vit DANS la barre : on ne le cherche jamais, il est là où le
+   pouce est déjà. Neutre — l'accent reste sur l'action. */
+.sc-repos {
+  display: flex; align-items: center; gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-3);
+  margin-bottom: var(--sp-3);
+  border-radius: var(--r-input);
+  background: var(--fill-4);
+  border: 1px solid var(--line-8);
+}
+.sc-repos-lab {
+  font-size: var(--fs-caption);
+  letter-spacing: var(--ls-caption);
+  text-transform: uppercase;
+  color: var(--text-50);
+  font-weight: 800;
+}
+.sc-repos-val {
+  font-family: var(--font-mono);
+  font-size: var(--fs-metric-xl);          /* ≥ 36 px : lisible à bout de bras */
+  font-weight: 600;
+  line-height: 1.05;
+  letter-spacing: -1px;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.sc-repos-a { margin-left: auto; display: flex; gap: 6px; flex-shrink: 0; }
+.sc-repos-a button {
+  min-width: 44px; min-height: 44px;
+  padding: 0 var(--sp-2);
+  border-radius: var(--r-md);
+  background: var(--fill-6);
+  border: 1px solid var(--line-10);
+  color: var(--text-74);
+  font-family: inherit;
+  font-size: var(--fs-meta);
+  font-weight: 700;
+  cursor: pointer;
+}
+/* Le dépassement est une DONNÉE, pas un bug : on l'affiche, on ne le cache
+   pas derrière un 0:00 figé. */
+.sc-repos.est-fini { background: var(--fill-8); border-color: var(--line-12); }
+.sc-repos.est-fini .sc-repos-val { color: var(--text-strong); }
+
+/* ── Prévu · Précédent · Saisi ─────────────────────────────────────
+   Trois lignes alignées sur la MÊME colonne : l'œil descend, il compare.
+   Le libellé est une étiquette, pas une phrase — la valeur porte tout. */
+.sc-plan { margin-bottom: var(--sp-2); }
+.sc-plan-l {
+  display: flex; align-items: baseline; gap: var(--sp-2);
+  min-height: 22px;
+  font-size: var(--fs-body-s);
+}
+.sc-plan-l--saisi { margin-bottom: 6px; }
+.sc-plan-k {
+  flex: 0 0 76px;
+  font-size: var(--fs-caption);
+  letter-spacing: var(--ls-caption);
+  text-transform: uppercase;
+  color: var(--text-45);
+  font-weight: 700;
+}
+.sc-plan-k--fort { color: var(--text); font-weight: 800; }
+.sc-plan-v { font-family: var(--font-mono); }
+/* « il y a 4 jours » : un écart, pas une date à décoder. Discret — c'est du contexte. */
+.sc-plan-quand { color: var(--text-45); font-size: var(--fs-meta); }
+.sc-del {
+  margin-left: auto;
+  min-height: 32px;
+  padding: 0 var(--sp-3);
+  border-radius: var(--r-sm);
+  background: var(--danger-12);
+  border: 1px solid var(--danger-30);
+  color: var(--danger);
+  font-family: inherit;
+  font-size: var(--fs-meta);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+/* ── Steppers : la charge est modifiable AU DOIGT, sur place ─────── */
+.sc-champs { display: flex; gap: var(--sp-3); }
+.sc-champ { flex: 1; min-width: 0; }
+.sc-champ-lab {
+  margin-bottom: 6px;
+  font-size: var(--fs-caption);
+  letter-spacing: var(--ls-caption);
+  text-transform: uppercase;
+  color: var(--text-45);
+  font-weight: 700;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.sc-stepper {
+  display: flex; align-items: center;
+  background: var(--fill-3);
+  border: 1px solid var(--line-8);
+  border-radius: var(--r-input);
+}
+.sc-stepper button {
+  width: 44px; height: 46px;
+  flex-shrink: 0;
+  background: none; border: none;
+  border-radius: var(--r-input);
+  color: var(--text-74);
+  font-family: var(--font-mono);
+  font-size: 22px;
+  cursor: pointer;
+}
+.sc-stepper input {
+  flex: 1; min-width: 0;
+  height: 46px;
+  padding: 0;
+  background: none; border: none;
+  text-align: center;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--fs-metric);
+  font-weight: 600;
+}
+.sc-stepper input:focus { outline: none; }
+.sc-stepper:focus-within { border-color: var(--line-12); background: var(--fill-6); }
+
+.sc-charge-note {
+  display: flex; align-items: center; gap: var(--sp-2);
+  width: 100%; min-height: 44px;
+  margin-top: var(--sp-3);
+  padding: var(--sp-2) var(--sp-3);
+  text-align: left;
+  background: var(--fill-2);
+  border: 1px solid var(--line-8);
+  border-radius: var(--r-md);
+  color: var(--text-55);
+  font-size: var(--fs-body-s);
+  line-height: 1.4;
+  cursor: pointer;
+}
+.sc-charge-note b { color: var(--text-74); font-weight: 700; }
+
+/* 🔴 « Le moteur ne connaît pas ta charge » n'est PAS le même état que
+   « charge estimée ». L'un est un point de départ qu'on peut suivre ; l'autre
+   est un TROU, et il attend un geste. Il se voit — mais il n'est pas une
+   erreur : c'est une question, pas une panne. */
+.sc-charge-note[data-etat='inconnue'] {
+  background: var(--fill-4);
+  border-color: var(--line-12);
+  color: var(--text-74);
+}
+.sc-charge-note[data-etat='inconnue'] b { color: var(--text); }
+
+/* ── LE bloc d'action : le SEUL aplat d'accent de l'écran ─────────── */
+.sc-seg-lab {
+  display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap;
+  margin: var(--sp-4) 0 var(--sp-2);
+  font-size: var(--fs-caption);
+  letter-spacing: var(--ls-caption);
+  text-transform: uppercase;
+  color: var(--text-45);
+  font-weight: 800;
+}
+.sc-seg-lab b { color: var(--text); font-weight: 800; }
+.sc-echelle {
+  margin-left: auto;
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: var(--fs-meta);
+  font-weight: 600;
+  color: var(--text-40);
+}
+.sc-seg { display: flex; border-radius: var(--r-btn); background: var(--acc); overflow: hidden; }
+.sc-seg button {
+  flex: 1;
+  height: 56px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 1px;
+  background: none;
+  border: none;
+  border-left: 1px solid var(--acc-ink-16);
+  color: var(--acc-ink);
+  font-family: inherit;
+  cursor: pointer;
+}
+.sc-seg button:first-child { border-left: none; }
+
+/* 🔴 LE GESTE ÉTEINT — tant que la charge n'est pas déclarée, on ne peut RIEN
+   inscrire. L'aplat d'accent (le « vas-y ») se retire : il est réservé à une
+   action qui peut aboutir. Un bouton qui a l'air actif et qui refuse est pire
+   qu'un bouton éteint.
+   ⚠️ Il reste LISIBLE (ce n'est pas une punition) : c'est le champ de charge,
+   juste au-dessus, qui appelle le geste. */
+.sc-seg.est-eteint { background: var(--fill-4); }
+.sc-seg.est-eteint button { color: var(--text-40); cursor: not-allowed; border-left-color: var(--line-8); }
+
+/* 🔴 CE GATE N'EST PAS COSMÉTIQUE — il défend une décision produit.
+   Sur iOS, `:hover` se déclenche AU TAP et reste COLLÉ jusqu'au tap suivant
+   ailleurs. Sans lui, le bouton qu'on vient de taper pour valider (« 2 RIR »)
+   garde, pendant toute la série suivante, le fond exact que le produit réserve
+   à un RIR DÉCLARÉ. L'utilisateur regarde son écran entre deux séries et voit
+   « RIR 2 » qui a l'air déjà coché — alors qu'on a délibérément REFUSÉ de
+   pré-cocher le RIR : un chiffre suggéré est un chiffre qu'on valide
+   machinalement, et le RIR est la donnée pivot du moteur.
+   Deux lignes de CSS annuleraient une décision prise contre la corruption de
+   la donnée. */
+@media (hover: hover) and (pointer: fine) {
+  .sc-seg button:hover { background: var(--acc-ink-16); }
+  .sc-icone:hover, .sc-ghost:hover, .sc-passe:hover, .sc-avenir-row:hover, .sc-jour:hover { background: var(--fill-6); }
+  .sc-cta:hover { background: var(--acc-hover); }
+}
+.sc-seg button:active { background: var(--acc-ink-45); }
+.sc-seg-n { font-family: var(--font-mono); font-size: 21px; font-weight: 700; line-height: 1; }
+.sc-seg-u { font-size: var(--fs-caption); font-weight: 700; letter-spacing: 0.5px; color: var(--acc-ink-70); }
+
+/* En ÉDITION seulement : on re-montre le choix QU'IL A FAIT. Ce n'est pas une
+   suggestion du moteur — c'est sa propre donnée. L'anneau intérieur lève
+   l'ambiguïté avec le survol (deux sens, une seule apparence = un bug). */
+.sc-seg button[aria-pressed="true"] {
+  background: var(--acc-ink-16);
+  box-shadow: inset 0 0 0 2px var(--acc-ink-45);
+}
+.sc-cta {
+  width: 100%;
+  min-height: 56px;
+  border: none;
+  border-radius: var(--r-btn);
+  background: var(--acc);
+  color: var(--acc-ink);
+  font-family: inherit;
+  font-size: var(--fs-label);
+  font-weight: 800;
+  cursor: pointer;
+}
+
+/* ── Le bilan — le seul endroit où le mouvement a le droit d'exister ──
+   Valider une série : ~17×/séance → aucune animation, jamais.
+   Terminer une séance : UNE fois, après 75 min sous la barre. Le budget de
+   mouvement se dépense ICI, précisément parce qu'il est coupé ailleurs. */
+.sc-bilan {
+  margin-top: var(--sp-5);
+  padding: var(--sp-6);
+  background: var(--surface);
+  border: 1px solid var(--line-8);
+  border-radius: var(--r-card);
+}
+.sc-bilan-titre { margin: 0 0 var(--sp-2); font-size: var(--fs-title); font-weight: 900; letter-spacing: var(--ls-title); }
+.sc-bilan-lead { margin: 0; font-size: var(--fs-body); color: var(--text-55); }
+.sc-bilan-lignes { margin-top: var(--sp-5); display: flex; flex-direction: column; gap: var(--sp-3); }
+.sc-bilan-ligne {
+  display: flex; align-items: baseline; justify-content: space-between; gap: var(--sp-3);
+  padding-bottom: var(--sp-3);
+  border-bottom: 1px solid var(--line-6);
+}
+.sc-bilan-ligne:last-child { border-bottom: none; padding-bottom: 0; }
+.sc-bilan-k { font-size: var(--fs-body-s); color: var(--text-55); }
+.sc-bilan-k small { display: block; margin-top: 2px; font-size: var(--fs-caption); color: var(--text-40); }
+
+/* Une SOURCE se consulte, elle ne se déverse pas. « dérivé : Σ charge × reps » était
+   rendu à plat sous le tonnage : la formule reste, elle passe derrière le tap. */
+.sc-bilan-ligne--why {
+  width: 100%;
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--line-6);
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.sc-bilan-ligne--why .sc-bilan-k { display: inline-flex; align-items: center; gap: 6px; }
+
+/* 🔴 UNE ABSENCE, PAS UNE VALEUR.
+   Deux séances sans exercice commun (Push puis Pull — son cas NOMINAL, six jours sur sept) :
+   rien n'a été comparé, donc rien n'a été mesuré. La taxonomie de valeurs.css n'a que trois
+   niveaux — mesuré, dérivé, estimé — et ce verdict n'est AUCUN des trois : il n'existe pas.
+   Il n'a donc ni la chasse fixe, ni le gras, ni le calibre d'une métrique. Il se lit comme
+   ce qu'il est : une phrase, en retrait. (Et il PASSE À LA LIGNE — `.val` est `nowrap`, ce
+   qui ferait déborder « première fois pour ces exercices » hors de la colonne.) */
+.sc-bilan-rien {
+  max-width: 58%;
+  text-align: right;
+  font-size: var(--fs-body-s);
+  line-height: 1.35;
+  color: var(--text-45);
+}
+.sc-bilan.est-neuf { animation: sc-arrive var(--dur-sheet) var(--ease-out) both; }
+.sc-bilan.est-neuf .sc-bilan-ligne { animation: sc-arrive var(--dur-ui) var(--ease-out) both; }
+.sc-bilan.est-neuf .sc-bilan-ligne:nth-child(1) { animation-delay: var(--dur-press); }
+.sc-bilan.est-neuf .sc-bilan-ligne:nth-child(2) { animation-delay: var(--dur-ui); }
+@keyframes sc-arrive { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+
+/* « Fewer and gentler, NOT zero » : le moment perd son DÉPLACEMENT, pas son
+   existence. Il se fond. */
+@media (prefers-reduced-motion: reduce) {
+  .sc-bilan.est-neuf,
+  .sc-bilan.est-neuf .sc-bilan-ligne { animation: sc-fondu var(--dur-ui) var(--ease-out) both; }
+  @keyframes sc-fondu { from { opacity: 0; } to { opacity: 1; } }
+}
+
+/* ═══ LA FEUILLE ══════════════════════════════════════════════════
+   C'est elle qui rend possible « honnête SANS bavard » : tout le
+   « pourquoi » du moteur monte ici, derrière un tap. Rien n'est supprimé,
+   tout est déplacé.
+   Les transitions (montée, voile, glissé de la poignée) viennent de
+   `motion.css`, pilotées par `data-state` que pose `design/sheet.js`.
+   Ici : la forme, et rien d'autre.
+   ═══════════════════════════════════════════════════════════════════ */
+.scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: flex-end;
+  background: var(--scrim);
+}
+.feuille {
+  width: 100%;
+  max-height: 82vh;
+  overflow-y: auto;
+  padding: var(--sp-3) var(--sp-5) calc(28px + env(safe-area-inset-bottom));
+  background: var(--surface);
+  border-top: 1px solid var(--line-10);
+  border-top-left-radius: var(--r-hero);
+  border-top-right-radius: var(--r-hero);
+}
+/* La feuille reçoit le focus à l'ouverture (motif de dialogue standard) — mais
+   elle n'est pas un CONTRÔLE : un anneau d'accent autour d'elle ne veut rien
+   dire. Les boutons, eux, gardent le leur quand on tabule. */
+.feuille:focus { outline: none; }
+.feuille-titre { margin: 0 0 var(--sp-1); font-size: 18px; font-weight: 800; letter-spacing: var(--ls-title); }
+.feuille-sous { margin: 0 0 var(--sp-5); font-size: var(--fs-body-s); line-height: 1.5; color: var(--text-55); }
+.feuille-item {
+  display: flex; align-items: center; gap: var(--sp-3);
+  width: 100%; min-height: 52px;
+  padding: var(--sp-3) var(--sp-4);
+  margin-bottom: 6px;
+  text-align: left;
+  background: var(--fill-3);
+  border: 1px solid var(--line-8);
+  border-radius: var(--r-md);
+  color: var(--text);
+  font-family: inherit;
+  font-size: var(--fs-body);
+  font-weight: 600;
+  cursor: pointer;
+}
+.feuille-item small { display: block; margin-top: 2px; font-weight: 500; color: var(--text-45); }
+.feuille-item--danger { background: var(--danger-12); border-color: var(--danger-30); color: var(--danger); }
+.feuille-item--primaire { background: var(--acc); border-color: transparent; color: var(--acc-ink); font-weight: 800; justify-content: center; }
+.feuille-item--discret { background: none; border-color: var(--line-6); color: var(--text-55); font-weight: 600; }
+.feuille-fermer {
+  width: 100%; min-height: 48px;
+  margin-top: var(--sp-3);
+  border-radius: var(--r-md);
+  background: none;
+  border: 1px solid var(--line-10);
+  color: var(--text-55);
+  font-family: inherit;
+  font-size: var(--fs-body);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+/* ── 🔴 LE RPE — la donnée pivot. Aucune valeur n'est suggérée. ────
+   Onze boutons identiques, aucun `aria-pressed="true"` au départ, aucun
+   « recommandé », aucun défaut. Le tap EST la déclaration.
+   Pré-remplir sur la cible ferait valider machinalement le chiffre suggéré —
+   et corromprait la seule donnée que le moteur ne peut pas recalculer. */
+.rpe-consigne { margin: 0 0 var(--sp-4); font-size: var(--fs-body); line-height: 1.5; color: var(--text-74); }
+.rpe-consigne b { color: var(--text-strong); font-weight: 700; }
+.rpe-grille { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; }
+.rpe-btn {
+  min-height: 52px;
+  border-radius: var(--r-md);
+  background: var(--fill-6);
+  border: 1px solid var(--line-10);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--fs-metric-s);
+  font-weight: 700;
+  cursor: pointer;
+}
+.rpe-btn:active { background: var(--acc); color: var(--acc-ink); border-color: transparent; }
+.rpe-echelle {
+  display: flex; justify-content: space-between;
+  margin: var(--sp-3) 0 var(--sp-5);
+  font-size: var(--fs-caption);
+  color: var(--text-40);
+  font-weight: 600;
+}
+
+.sc-limite {
+  margin: 0 0 var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+  border-radius: var(--r-md);
+  background: var(--fill-2);
+  border: 1px solid var(--line-8);
+  border-left: 2px solid var(--text-34);
+  font-size: var(--fs-body-s);
+  line-height: 1.5;
+  color: var(--text-55);
+}
+.sc-limite b { color: var(--text-strong); font-weight: 700; }
+.sc-limite--nu { border-left-color: transparent; }
+
+/* ═══════════════════════════════════════════════════════════════════
+   LES LIGNES D'ÉTAT — l'essentiel à plat, la vérité derrière le tap
+   ═══════════════════════════════════════════════════════════════════
+   L'onglet Programme faisait 7 656 px — dix hauteurs d'iPhone — parce que
+   CHAQUE pavé du moteur était rendu à plat : l'échauffement et ses six
+   consignes, les huit règles, les six signaux, l'hypothèse clinique, le
+   renvoi médical, et une alerte qui cite « (veille/18 §9.1, règle 2) » et
+   « ≈ −16 % de risque relatif, extrapolé des sports collectifs ».
+
+   Le mécanisme qui répare ça existait DÉJÀ, à trois lignes de là : le
+   « Pourquoi ? » des substitutions. Il était bon. Il n'était appliqué
+   nulle part ailleurs.
+
+   🔴 Une ligne dit CE QUI EST. Le tap dit POURQUOI.
+      Rien n'est supprimé — tout est DÉPLACÉ. Une ligne qui n'ouvrirait
+      rien serait le signe qu'on a fait taire le moteur : la régression.
+   ─────────────────────────────────────────────────────────────────── */
+.lignes-etat { display: flex; flex-direction: column; gap: var(--sp-2); }
+.lignes-etat:empty { display: none; }
+/* Ce qui est vrai, utile — et dont on n'a pas besoin MAINTENANT, un haltère
+   dans la main. Ça vit en bas, et ça se consulte. */
+.lignes-etat--bas { margin-top: var(--sp-2); }
+
+.ligne-etat {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  width: 100%;
+  min-height: 48px;            /* c'est un doigt */
+  padding: var(--sp-3) var(--sp-4);
+  text-align: left;
+  background: var(--fill-3);
+  border: 1px solid var(--line-8);
+  border-left: 2px solid var(--text-34);
+  border-radius: var(--r-md);
+  color: var(--text-74);
+  font-family: inherit;
+  font-size: var(--fs-body-s);
+  line-height: 1.4;
+  cursor: pointer;
+}
+.ligne-etat:hover { background: var(--fill-6); color: var(--text); }
+.ligne-etat b { color: var(--text-strong); font-weight: 700; }
+.ligne-etat-i { flex-shrink: 0; }
+.ligne-etat-t { flex: 1; min-width: 0; }
+.ligne-etat-go {
+  margin-left: auto;
+  flex-shrink: 0;
+  font-size: var(--fs-meta);
+  font-weight: 700;
+  color: var(--text-45);
+}
+
+/* La gravité se voit sur le LISERÉ, pas sur un aplat de couleur : un écran
+   qui crie partout ne crie plus nulle part — et le bruit fait désactiver ce
+   qui protège. Le renvoi médical est le seul à porter l'accent. */
+.ligne-etat--alerte { border-left-color: var(--text-74); }
+.ligne-etat--critique {
+  border-left-color: var(--acc);
+  background: var(--acc-13);
+  color: var(--text);
+}
+.ligne-etat--critique .ligne-etat-go { color: var(--acc); }
+
+/* ── L'en-tête du programme ────────────────────────────────────────
+   ⛔ Plus de <h1>Ton programme</h1> : « du texte qui explique ce qu'on voit
+      déjà » est le premier signe de la pâte IA. Le split, lui, DIT quelque
+      chose — et il vient du moteur. */
+.prog-tete { display: flex; flex-direction: column; gap: 2px; }
+
+/* Le « ? » d'une charge — même glyphe que partout, dans la ligne, sans
+   accordéon qui rallonge l'écran. */
+.exo-why {
+  margin-left: auto;
+  display: flex; align-items: center; justify-content: center;
+  width: 32px; height: 32px;
+  flex-shrink: 0;
+  padding: 0;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+}

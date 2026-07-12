@@ -21,7 +21,22 @@
  * ── Ce que ce module expose ─────────────────────────────────────────────
  *   chargerPersona()      lit le persona depuis IndexedDB (amorce si vide)
  *   chargerReferentielEx()  charge le référentiel d'exercices (mémoïsé)
- *   genererProgramme()    persona (IndexedDB) → programme, DANS LE NAVIGATEUR
+ *   chargerJournal()      le magasin `seances` → le JOURNAL que le moteur sait lire
+ *   genererProgramme()    persona + journal → programme ADAPTÉ, DANS LE NAVIGATEUR
+ *
+ * ── 🔴 LA BOUCLE ÉTAIT OUVERTE, ET C'ÉTAIT LE BUG ───────────────────────
+ * `seance.js versEntreeJournal()` était écrite, testée, importée… et **jamais
+ * appelée**. Les séances s'écrivaient dans le magasin `seances` et **le moteur ne
+ * les lisait jamais** : `journal.js`, `adaptation.js` (double progression, deload)
+ * et `charge.js` (la jauge unifiée sRPE) étaient publiés dans `dist/` et importés
+ * par personne. Le programme était **régénéré à l'identique à chaque démarrage**,
+ * à partir du seul persona. Noter son RPE huit semaines durant n'aurait **rien**
+ * changé à ce qui était prescrit.
+ *
+ * Ce module referme la boucle — **sans migration de schéma**. Le magasin `seances`
+ * contient déjà tout ce dont `journal.js` a besoin : le journal est **dérivé à la
+ * LECTURE**. Aucun nouveau magasin, `DB_VERSION` intouchée. Une migration ratée
+ * détruirait des semaines de RPE irremplaçables ; on n'en fait pas.
  *
  * ── 🔴 L'APP PUBLIÉE N'A PAS DE PROFIL ──────────────────────────────────
  * En développement, le premier démarrage amorce un persona depuis le dépôt
@@ -37,9 +52,15 @@
 
 import { normaliserPersona } from '../../src/lib/personne.js';
 import { chargerReferentiel } from '../../src/lib/exercices.js';
-import { genererProgrammeMuscu } from '../../src/lib/muscu.js';
+// 🔴 `journal.js` et `adaptation.js` (et `charge.js`, via elle) étaient publiés
+// dans `dist/` et importés par PERSONNE. Voici leur premier appelant.
+import { journalVide, ajouterSeanceMuscu } from '../../src/lib/journal.js';
+import { programmeAdapteMuscu } from '../../src/lib/adaptation.js';
+// La cible est validée par le MOTEUR, jamais par l'app : une seconde règle divergerait.
+import { normaliserCible } from '../../src/lib/objectif.js';
+import { versEntreeJournal } from './seance.js';
 import { AMORCE } from './amorce.js';
-import { lireMeta, ecrireMeta } from './db.js';
+import { lireMeta, ecrireMeta, lireTout } from './db.js';
 
 /** Clé du persona dans le magasin `meta`. */
 export const CLE_PERSONA = 'persona';
@@ -91,11 +112,128 @@ export async function chargerPersona() {
   return { brut, persona: normaliserPersona(brut), amorce };
 }
 
-/** Réécrit le persona en base (import, onboarding à venir). */
+/** Réécrit le persona en base (import, pesée, onboarding à venir). */
 export const enregistrerPersona = (brut) => ecrireMeta(CLE_PERSONA, brut);
 
 /** Efface le persona : le prochain démarrage ré-amorcera depuis le dépôt. */
 export const reamorcerPersona = () => ecrireMeta(CLE_PERSONA, null);
+
+// ── 🔴 LE POIDS DE CORPS — le seul chiffre du profil qu'on ouvre AUJOURD'HUI ──────────
+//
+// Hier, un poids de corps non modifiable était un trou **cosmétique**. Depuis que le tonnage
+// compte le corps (tractions, dips — `seance.js PART_DU_CORPS`), il **porte une large part du
+// chiffre affiché en gros**. Un poids faux fausse chaque séance Pull, **en silence** — et le
+// « ? » du bilan promet que la valeur est **GELÉE à la date de la séance** : les séances
+// passées **ne se répareraient jamais**.
+//
+//   lecture seule + porteur + gelé = un chiffre faux qu'on ne pourra plus jamais rendre juste.
+//
+// D'où l'ordre : **le poids doit devenir saisissable AVANT que l'historique ne se remplisse.**
+//
+// ⚠️ **PÉRIMÈTRE : le poids, et rien d'autre.** Pas l'écran « Moi », pas l'onboarding, pas le
+// profil complet — c'est un autre chantier. **Un seul champ**, celui qui porte le chiffre de
+// tête. Le plus petit geste qui rend le chiffre RÉPARABLE.
+//
+// ⚠️ **Une pesée modifie le FUTUR, pas le PASSÉ.** Le gel est VOLONTAIRE (`seance.js
+// creerSeance`) : sans lui, chaque montée sur la balance réécrirait le tonnage de toutes les
+// séances déjà loguées — le carnet raconterait une progression qui n'a pas eu lieu. On ne le
+// casse pas ; on le DIT à l'écran.
+
+/** Les bornes de la population que ce moteur accepte (`personne.js` refuse déjà les mineurs). */
+export const POIDS_MIN_KG = 30;
+export const POIDS_MAX_KG = 300;
+
+/**
+ * 🔴 `null` n'est pas `0`, et `""` n'est pas un poids.
+ *
+ * `Number(null) === 0` et `Number('') === 0` : sans ce garde-fou, un champ **vide** entrerait
+ * en base comme **« 0 kg »** — et le tonnage des tractions tomberait à zéro sans un mot.
+ * C'est exactement le poison que `seance.js exiger()` combat sur le RIR. Même règle, même
+ * endroit : **à la porte d'entrée de la donnée.**
+ *
+ * @returns {number} le poids, arrondi à 100 g (la précision d'une balance de salle de bain —
+ *                   ni plus, ni moins : afficher `84,37 kg` promettrait une exactitude fausse).
+ */
+export function validerPoidsCorps(valeur) {
+  if (valeur == null || String(valeur).trim() === '') {
+    throw new Error('Poids de corps : aucune valeur. « Je ne sais pas » n’est pas « zéro » — l’app n’écrit pas un chiffre que tu n’as pas donné.');
+  }
+  const n = Number(String(valeur).replace(',', '.').trim());
+  if (!Number.isFinite(n)) {
+    throw new Error(`Poids de corps invalide (« ${valeur} ») : un nombre est attendu.`);
+  }
+  if (n < POIDS_MIN_KG || n > POIDS_MAX_KG) {
+    throw new Error(`Poids de corps hors bornes (« ${valeur} ») : attendu entre ${POIDS_MIN_KG} et ${POIDS_MAX_KG} kg.`);
+  }
+  return Math.round(n * 10) / 10;
+}
+
+/**
+ * La pesée. Elle écrit dans le **persona** (`persona.profil.poids_kg`), là où le moteur la lit.
+ *
+ * 🔴 **Premier appel de production d'`enregistrerPersona()`** — exportée depuis le premier jour,
+ * et appelée par personne.
+ *
+ * On réécrit le persona **BRUT**, jamais le normalisé : `normaliserPersona()` ajoute des
+ * hypothèses dérivées (`persona.hypotheses`) qui n'ont rien à faire en base. Persister le
+ * normalisé, c'est figer aujourd'hui des défauts que le moteur recalculerait demain.
+ *
+ * @returns {Promise<number>} le poids réellement écrit.
+ */
+export async function enregistrerPoidsCorps(valeur) {
+  const poids = validerPoidsCorps(valeur);
+  const brut = await lireMeta(CLE_PERSONA, null);
+  if (!brut?.profil) {
+    throw new Error("Aucun profil sur cet appareil : il n'y a pas de poids de corps à corriger.");
+  }
+  // Copie : on ne mute pas ce qu'on a lu (une écriture qui échoue ne doit rien laisser derrière).
+  await enregistrerPersona({ ...brut, profil: { ...brut.profil, poids_kg: poids } });
+  return poids;
+}
+
+// ── 🔴 LA CIBLE — le deuxième chiffre du profil que cette app sait recevoir ────────────
+//
+// > *« Je ne ressens pas la possibilité de rentrer mes charges, **ni de fixer un objectif**. »*
+//
+// La première moitié est réglée (charge/reps/RIR/RPE se saisissent). **Voici la seconde.**
+//
+// ⚠️ **On n'écrit PAS un champ que le moteur ne lit pas.** Ce projet a produit ce bug **deux
+// fois** (`versEntreeJournal()` jamais appelée ; la séance finie prisonnière du pavé de note).
+// La cible est lue par `adaptation.js programmeAdapteMuscu` — à chaque génération, avec les
+// limitations sous la main pour pouvoir **REFUSER**. `tests/records.test.js` tombe si ça cesse.
+//
+// ⚠️ **La validation vit dans le MOTEUR** (`objectif.js normaliserCible`), pas ici. Une seconde
+// validation dans l'app, ce serait deux règles qui divergeront — et celle du navigateur serait
+// la mauvaise, celle que les tests ne couvrent pas. L'app appelle, elle ne re-décide pas.
+
+/**
+ * Écrit la cible dans le persona (`muscu.cible`), là où le moteur la lit.
+ *
+ * @param {{exercice: string, charge_kg: number|string, echeance: string}} brut
+ * @returns {Promise<object>} la cible réellement écrite (normalisée par le moteur).
+ */
+export async function enregistrerCible(brut) {
+  const { ok, cible, pourquoi } = normaliserCible(brut);
+  if (!ok) throw new Error(pourquoi);
+
+  const persona = await lireMeta(CLE_PERSONA, null);
+  if (!persona?.muscu) {
+    throw new Error("Aucun profil sur cet appareil : il n'y a pas de programme auquel fixer une cible.");
+  }
+  await enregistrerPersona({ ...persona, muscu: { ...persona.muscu, cible } });
+  return cible;
+}
+
+/**
+ * Retire la cible. **Un objectif atteint — ou abandonné — doit pouvoir partir** : un champ qu'on
+ * ne peut plus vider est un champ qui ment jusqu'à la fin des temps.
+ */
+export async function effacerCible() {
+  const persona = await lireMeta(CLE_PERSONA, null);
+  if (!persona?.muscu) return;
+  const { cible, ...muscu } = persona.muscu; // eslint-disable-line no-unused-vars
+  await enregistrerPersona({ ...persona, muscu });
+}
 
 // ── Référentiel d'exercices ───────────────────────────────────────────
 
@@ -110,27 +248,80 @@ export function chargerReferentielEx() {
   return referentielPromise;
 }
 
+// ── Journal — DÉRIVÉ des séances loguées, à la LECTURE ────────────────
+
+/**
+ * Le magasin `seances` (fidélité pleine : chaque série, sa charge, son RIR, son
+ * repos réel) → le **journal** que `src/lib/*` sait lire (agrégé par exercice).
+ *
+ * ⚠️ On ne stocke PAS le journal : on le **dérive**. Deux copies de la même
+ * vérité, c'est une vérité qui divergera — et une migration IndexedDB de plus,
+ * donc un risque de plus sur des données irremplaçables.
+ *
+ * 🔒 `journal.persona` porte l'identité du propriétaire : c'est ce champ que
+ * `charge.js verifierProprietaireJournal()` exige pour garantir qu'on ne croise
+ * jamais le journal d'un humain avec le persona d'un autre.
+ *
+ * 🔴 Une séance qui ne rentre pas ne disparaît pas en silence : elle est
+ * **remontée** (`rejets`). Une donnée ignorée sans bruit, c'est exactement le bug
+ * qu'on est en train de réparer.
+ *
+ * @returns {Promise<{journal: object, rejets: Array<{id, date, message}>}>}
+ */
+export async function chargerJournal(persona = null) {
+  const enregistrements = (await lireTout('seances')) ?? [];
+  enregistrements.sort((a, b) => String(a.date).localeCompare(String(b.date)));
+
+  const journal = journalVide(persona?.id ?? persona?.nom ?? null);
+  const rejets = [];
+
+  for (const enr of enregistrements) {
+    try {
+      // `versEntreeJournal` était écrite, testée, importée — et jamais appelée.
+      // Voici son seul appel de production. C'est la ligne qui ouvre le tiroir.
+      ajouterSeanceMuscu(journal, versEntreeJournal(enr));
+    } catch (e) {
+      console.error(`[moteur] séance ${enr?.id} (${enr?.date}) refusée par le journal :`, e);
+      rejets.push({ id: enr?.id ?? null, date: enr?.date ?? null, message: e.message });
+    }
+  }
+  return { journal, rejets };
+}
+
 // ── Génération ────────────────────────────────────────────────────────
 
 /**
- * Le geste central : le persona sort d'IndexedDB, le moteur tourne DANS LE
- * NAVIGATEUR, le programme en sort.
+ * Le geste central : le persona ET LE JOURNAL sortent d'IndexedDB, le moteur
+ * tourne DANS LE NAVIGATEUR, le programme **adapté** en sort.
+ *
+ * Toute la boucle vit dans `src/lib/adaptation.js programmeAdapteMuscu()` — une
+ * fonction PURE, la même que celle que les tests exercent. Ici, on ne fait que
+ * l'I/O : lire, appeler, rendre.
+ *
+ * ⚠️ Le persona recalé n'est **pas réécrit en base**. Il est **dérivé** à chaque
+ * génération, depuis le journal — qui, lui, est la source de vérité durable. Rien
+ * à migrer, rien à corrompre, et le résultat est le même : la charge prescrite
+ * suit le réel.
  *
  * 🔴 Renvoie `null` s'il n'y a **pas de profil** — cas normal d'une app publiée,
  * pas un cas d'erreur. On lit le persona AVANT le référentiel : un visiteur sans
  * profil n'a aucune raison d'attendre 848 Ko d'exercices pour qu'on lui dise
  * qu'il n'a pas de profil.
  *
- * @returns {Promise<{persona, brut, programme, amorce}|null>}
+ * @returns {Promise<{persona, brut, programme, adaptation, charge, journal, rejets, amorce}|null>}
  */
 export async function genererProgramme() {
   const { brut, persona, amorce } = await chargerPersona();
   if (!persona) return null;
 
   if (!persona.muscu) {
-    throw new Error(`${persona.nom} n'a pas de bloc « muscu » : le moteur n'a rien à programmer.`);
+    // ⚠️ Ce message s'AFFICHE (écran d'erreur du programme) : il ne parle pas du moteur.
+    throw new Error(`${persona.nom} n'a pas de bloc « muscu » : il n'y a rien à programmer.`);
   }
 
   const referentiel = await chargerReferentielEx();
-  return { persona, brut, amorce, programme: genererProgrammeMuscu(persona, referentiel) };
+  const { journal, rejets } = await chargerJournal(persona);
+
+  const resultat = programmeAdapteMuscu(brut, journal, referentiel);
+  return { ...resultat, amorce, journal, rejets };
 }
