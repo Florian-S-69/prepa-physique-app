@@ -7,14 +7,28 @@
 export const $ = (sel, racine = document) => racine.querySelector(sel);
 export const $$ = (sel, racine = document) => [...racine.querySelectorAll(sel)];
 
-/** Bascule un écran (les écrans sont des <section data-ecran>). */
+/**
+ * Bascule un écran (les écrans sont des <section data-ecran>).
+ *
+ * 🔴 TOUS LES ÉCRANS NE SONT PAS DES ONGLETS — et c'est toute l'ossature.
+ *
+ * La **séance** et l'écran **Données** n'ont aucun `data-vers` : on les ATTEINT (depuis
+ * l'Accueil, depuis Moi), on n'y « va » pas au menu. Sans marqueur, la barre d'onglets
+ * s'éteindrait entièrement dès qu'on y entre : **plus aucun onglet allumé, donc plus
+ * aucun repère de position.** `data-sous-de` dit quel onglet reste allumé pour le compte
+ * de l'écran affiché.
+ *
+ * ⚠️ Le nom du parent, pas le nom de l'écran : `donnees` → allume `moi`.
+ */
 export function afficherEcran(id) {
+  let parent = id;
   for (const section of $$('[data-ecran]')) {
     const actif = section.dataset.ecran === id;
     section.hidden = !actif;
+    if (actif && section.dataset.sousDe) parent = section.dataset.sousDe;
   }
   for (const onglet of $$('[data-vers]')) {
-    const actif = onglet.dataset.vers === id;
+    const actif = onglet.dataset.vers === parent;
     onglet.classList.toggle('est-actif', actif);
     onglet.setAttribute('aria-current', actif ? 'page' : 'false');
   }
@@ -163,6 +177,20 @@ export function ouvrirFeuille({ titre, sous = null, items = [], corps = null, fe
   });
 
   $('#feuille-fermer').textContent = fermer;
+
+  // 🔴 UNE FEUILLE S'OUVRE EN HAUT. Vu à l'écran, pas dans un test (2026-07-13).
+  //
+  // `.feuille` est un nœud UNIQUE, réutilisé par toutes les feuilles — et son `scrollTop` ne
+  // l'était pas moins. Le formulaire de course descend au-delà de l'écran : pour atteindre
+  // « Enregistrer », **il FAUT le faire défiler**. Taper « Pourquoi cette note ? » juste après
+  // ouvrait la feuille suivante **au même décalage** : le titre passait au-dessus du bord, coupé
+  // en deux, et on atterrissait au milieu d'un paragraphe.
+  //
+  // Le harnais ne pouvait pas le voir (`aide-ecran.mjs` : « aucune mise en page, aucune
+  // géométrie »). **C'est l'œil qui l'a trouvé, dans une capture** — comme les quatre fois d'avant.
+  const feuille = scrim.querySelector('[data-sheet]');
+  if (feuille) feuille.scrollTop = 0;
+
   globalThis.Sheet.open(scrim);
 
   // 🔴 On donne le focus à la FEUILLE, jamais à son premier bouton.

@@ -22,9 +22,9 @@
  */
 
 import { $, $$, afficherEcran, toast, formaterDate, brancherFeuille, ouvrirFeuille, blocPourquoi } from './ui.js';
-import { initSeance, brancherSeance, activerSeance, reprendreSeance } from './ecran-seance.js';
+import { initSeance, brancherSeance, activerSeance, quitterVueSeance, reprendreSeance } from './ecran-seance.js';
 import { ouvrirDB, lireMeta, ecrireMeta, ECHECS } from './db.js';
-import { afficherProgramme } from './programme.js';
+import { afficherProgramme, brancherProgramme } from './programme.js';
 import {
   chargerPersona, reamorcerPersona, amorceDisponible, enregistrerPoidsCorps,
   enregistrerCible, effacerCible, genererProgramme,
@@ -242,6 +242,16 @@ async function rendreStockage() {
   const txt = $('#txt-persist');
   const note = $('#note-persist');
   const btn = $('#btn-persist');
+
+  // 🔴 LA LIGNE DE « MOI » DIT L'ÉTAT, PAS « VOIR ».
+  //    Ranger la plomberie derrière un tap ne doit pas la rendre MUETTE : si le stockage
+  //    n'est pas protégé, ça doit se lire **sans ouvrir**. Une porte fermée sur un mot neutre
+  //    (« Gérer », « Voir ») cacherait précisément la seule chose qui presse.
+  const ligne = $('#moi-donnees-etat');
+  if (ligne) {
+    ligne.textContent = persistant === null ? 'Inconnu' : persistant ? 'Protégé' : 'Non protégé';
+    ligne.classList.toggle('ligne-etat-go--alerte', persistant === false);
+  }
 
   if (persistant === null) {
     pastille.dataset.etat = 'ko';
@@ -753,16 +763,38 @@ function brancherCycleDeVie() {
 // quitte l'app, ce qui est le comportement ATTENDU. On ne piège personne dans l'app :
 // on lui rend la navigation qu'il croit déjà avoir.
 
-const ECRAN_RACINE = 'seance';
+/**
+ * 🔴 ON ARRIVE SUR L'ACCUEIL. Pas dans une séance, pas dans un formulaire.
+ *
+ *   > « On rentre dans le truc bam et tu lances ta course. »
+ *
+ * L'écran racine s'appelait `seance` — et c'était **exact** : ouvrir l'app, c'était ouvrir
+ * l'action. L'accueil existait pourtant déjà, sous ce nom-là. Il est maintenant nommé, et
+ * c'est lui qu'on ouvre.
+ */
+const ECRAN_RACINE = 'accueil';
 let ecranCourant = ECRAN_RACINE;
+
+/**
+ * 🔴 ENTRER dans l'écran de séance ET EN SORTIR — les DEUX, à chaque changement d'écran.
+ *
+ * Seule l'entrée était câblée. La sortie n'existait pas : la coquille restait donc figée en
+ * mode « séance » — **barre d'action épinglée en bas d'un écran qui n'est pas le sien, barre
+ * d'onglets absente, plus aucune navigation.** L'utilisateur était enfermé hors de son app.
+ * Voir `ecran-seance.js`, `rendre()` — l'état qui manquait.
+ */
+function montrer(vers) {
+  afficherEcran(vers);
+  if (vers === 'seance') activerSeance();
+  else quitterVueSeance();
+}
 
 /** Navigue ET empile — ce que fait un tap sur un onglet. */
 function naviguer(vers) {
   if (vers === ecranCourant) return;
   history.pushState({ ecran: vers }, '');
   ecranCourant = vers;
-  afficherEcran(vers);
-  if (vers === 'seance') activerSeance();
+  montrer(vers);
 }
 
 function brancherNavigation() {
@@ -770,18 +802,48 @@ function brancherNavigation() {
     btn.addEventListener('click', () => naviguer(btn.dataset.vers));
   }
 
+  // 🔴 LA PORTE VERS LA PLOMBERIE — et la porte de retour.
+  //    « Données » n'est plus un onglet : c'est un sous-écran de « Moi ». Il faut donc,
+  //    explicitement, un chemin pour y aller et un chemin pour en revenir. Un écran sans
+  //    sortie est exactement le bug qui a enfermé l'utilisateur hors de son app.
+  //    On passe par `naviguer` (jamais `afficherEcran`) : elle empile l'historique, donc
+  //    le retour d'Android remonte à « Moi » au lieu de fermer l'app.
+  $('#moi-vers-donnees').addEventListener('click', () => naviguer('donnees'));
+  $('#donnees-retour').addEventListener('click', () => naviguer('moi'));
+
   // Le retour d'Android — et le retour du navigateur, et le geste de retour.
   globalThis.addEventListener('popstate', (e) => {
     const vers = e.state?.ecran ?? ECRAN_RACINE;
     ecranCourant = vers;
-    afficherEcran(vers); // on N'EMPILE PAS : on vient justement de dépiler
-    if (vers === 'seance') activerSeance();
+    montrer(vers); // on N'EMPILE PAS : on vient justement de dépiler
   });
 }
 
 // ══════════════════════════════════════════════════════════════════════
 // Démarrage
 // ══════════════════════════════════════════════════════════════════════
+
+/**
+ * 🔴 LE SPLASH S'EN VA — DU DOM, PAS SEULEMENT DE LA VUE.
+ *
+ * Ce dépôt a déjà payé **un voile transparent qui couvrait tout l'écran pendant que
+ * 16 assertions étaient au vert.** Une couche `position: fixed` qu'on se contente de rendre
+ * transparente **reste une couche fixe : elle avale les taps.** Celle-ci quitte l'arbre.
+ *
+ * ⚠️ Et elle le quitte **même si la transition ne part jamais** — onglet en arrière-plan,
+ * `prefers-reduced-motion`, moteur qui saute l'animation : `transitionend` ne se déclenche
+ * pas, et l'app resterait derrière un rideau vert. La minuterie est le VRAI chemin ;
+ * `transitionend` n'est qu'un raccourci. **On ne fait jamais dépendre l'utilisabilité de
+ * l'app du bon vouloir d'une animation.**
+ */
+function retirerSplash() {
+  const s = $('#splash');
+  if (!s) return;
+  s.classList.add('splash--sort');
+  const partir = () => s.remove();
+  s.addEventListener('transitionend', partir, { once: true });
+  setTimeout(partir, 700); // le filet — et il est SUFFISANT à lui seul
+}
 
 function ouvrirApp() {
   $('#app').hidden = false;
@@ -801,6 +863,7 @@ async function demarrer() {
   } catch (e) {
     // Sans base, l'app ne peut rien retenir. Le dire franchement plutôt que de
     // laisser l'utilisateur saisir des séances dans le vide.
+    // ⚠️ `innerHTML` remplace TOUT le corps — le splash compris. Rien à retirer.
     document.body.innerHTML = `
       <div class="porte" style="display:flex">
         <div class="porte-carte">
@@ -815,7 +878,11 @@ async function demarrer() {
   brancherEchecsDeBase(); // AVANT tout le reste : la première écriture peut déjà échouer
   brancherNavigation();
   brancherFeuille(); // le glissé de la poignée (design/sheet.js)
-  brancherSeance(); // le chrono de repos est DEDANS — il n'a plus d'onglet à lui
+  // 🔴 On lui passe LA porte de navigation. Quitter une séance EST une navigation : sans elle,
+  //    l'écran sortait par `afficherEcran`, qui peint sans rien dire à la coquille — et
+  //    `ecranCourant` restait bloqué sur « seance ». Taper l'onglet Séance ne faisait plus rien.
+  brancherSeance({ naviguer }); // le chrono de repos est DEDANS — il n'a plus d'onglet à lui
+  brancherProgramme({ naviguer }); // même porte : l'état vide envoie vers Données, il doit EMPILER
   brancherSauvegarde();
   brancherProfil();
   brancherPoids(); // le poids de corps est enfin SAISISSABLE — il porte le tonnage
@@ -824,6 +891,10 @@ async function demarrer() {
 
   await restaurerChrono(); // un chrono lancé avant un kill de l'app doit revenir juste
   await tenirLaPorte();
+  // La porte a tranché (app ouverte, ou onboarding d'installation affiché) : le rideau
+  // peut tomber. Il se retire APRÈS elle — sinon on verrait l'app une fraction de seconde
+  // avant que la porte ne la recouvre.
+  retirerSplash();
 
   // 🔴 LE MOTEUR TOURNE ICI. On ne l'attend pas : le référentiel pèse 848 Ko et
   // l'app doit être utilisable pendant ce temps (l'écran affiche son squelette).

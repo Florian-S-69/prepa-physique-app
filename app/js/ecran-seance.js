@@ -43,6 +43,20 @@ import {
   $, $$, el, echapper, riche, toast, afficherEcran,
   ouvrirFeuille, fermerFeuille, blocPourquoi, SAIT, IGNORE,
 } from './ui.js';
+
+/**
+ * 🔴 LA NAVIGATION DE LA COQUILLE — injectée par `main.js`, jamais importée.
+ *
+ * `main.js` importe cet écran ; cet écran ne peut donc pas importer `main.js`. Mais quitter une
+ * séance **est une navigation**, et elle doit passer par la MÊME porte que les onglets : celle
+ * qui empile une entrée d'historique (le retour d'Android) et qui met `ecranCourant` à jour.
+ *
+ * `afficherEcran` ne fait ni l'un ni l'autre — elle *peint*. L'utiliser pour sortir d'une séance
+ * laissait la coquille convaincue d'être encore sur « seance » : **taper l'onglet Séance ne
+ * faisait plus rien du tout.** Le repli sur `afficherEcran` garde l'écran utilisable si personne
+ * n'injecte rien (les tests qui ne montent que cet écran), mais l'app, elle, injecte.
+ */
+let allerVers = afficherEcran;
 import { ecrire, lireTout, lireMeta, ecrireMeta } from './db.js';
 import {
   derive, mesureKg, estimeKg, lestKg,
@@ -63,8 +77,12 @@ import {
   // 🔴 DEUX fonctions, dans cet ordre : la séance s'écrit, PUIS elle s'annote.
   terminerSeance, noterSeance,
   chargeSuivante, etatCharge, estAuPoidsDuCorps, resumeBloc,
-  seriesAuPoidsDuCorps, detailTonnage, RPE_FOSTER, RIR_MAX, RIR_CHOIX,
+  seriesAuPoidsDuCorps, detailTonnage, RIR_MAX, RIR_CHOIX,
 } from './seance.js';
+// 🔴 LE RPE DE SÉANCE — la question, la grille, l'échelle et le « pourquoi », en UN seul endroit.
+// L'écran de course rendait la même grille SANS la question et SANS l'explication. La jauge
+// unifiée ne tient que si la question est la même des deux côtés (ADR 0006).
+import { QUESTION_RPE, grilleRPE, echelleRPE, boutonPourquoiRPE } from './rpe.js';
 
 /**
  * Pourquoi une série reste hors du tonnage. Deux raisons, et elles n'ont RIEN à voir :
@@ -185,10 +203,40 @@ export async function initSeance(resultat) {
   rendre();
 }
 
-/** Appelée à chaque fois que l'onglet Séance devient visible. */
+/**
+ * Appelée à chaque fois que l'écran de séance devient visible.
+ *
+ * 🔴 ET S'IL N'Y A PAS DE SÉANCE, ON N'Y RESTE PAS.
+ * L'écran de séance n'a plus d'onglet, mais il a toujours une entrée d'HISTORIQUE : un
+ * retour d'Android peut y ramener **après** que la séance a été terminée. Sans ce garde,
+ * on atterrit sur une section vide, sans barre d'action et sans rien à faire — un
+ * cul-de-sac. L'écran se soigne lui-même : il renvoie à l'accueil.
+ */
 export function activerSeance() {
+  if (!etat) {
+    surEcran = false;
+    allerVers('accueil');
+    return;
+  }
+  surEcran = true;
   rendre();
   lancerBoucle();
+}
+
+/**
+ * 🔴 ON QUITTE L'ÉCRAN — **la séance, elle, continue d'exister.**
+ *
+ * C'est la moitié qui n'existait pas. `activerSeance()` était appelée à l'entrée ; **rien**
+ * n'était appelé à la sortie. La coquille restait donc figée dans son état « en séance » :
+ * barre d'action épinglée sur l'écran Programme, barre d'onglets absente, **plus aucune
+ * navigation**. (Voir le bloc de `rendre()`.)
+ *
+ * ⚠️ Elle ne touche NI à `etat`, NI au chrono, NI au carnet. Sortir de la VUE n'est pas sortir
+ * de la SÉANCE — c'est exactement la distinction qui manquait.
+ */
+export function quitterVueSeance() {
+  surEcran = false;
+  rendre();
 }
 
 /**
@@ -363,31 +411,78 @@ async function demarrer(jour) {
   semer();
   await sauver();
   await garderEcranAllume();
+  // 🔴 DÉMARRER, C'EST NAVIGUER. La séance est un ÉCRAN maintenant, pas un pli de l'accueil :
+  //    il faut y ALLER. Et il faut y aller par la porte de la coquille (`allerVers`), qui
+  //    empile l'historique — sinon le retour d'Android, depuis une séance, fermerait l'app.
+  surEcran = true;
+  allerVers('seance');
   rendre();
   lancerBoucle();
   annoncer(`Séance ${etat.seance} démarrée.`);
 }
 
+/**
+ * 🔴 LA SORTIE — et elle mène quelque part, maintenant.
+ *
+ *   > « J'ai du mal à sortir de ma séance une fois dedans, pour dire par exemple que je veux
+ *   >   juste **changer de séance**. »
+ *
+ * **Rien ne s'appelait « changer de séance ».** Il fallait deviner que « Quitter » ramenait au
+ * choix des séances — et quand une série était loguée, « Quitter et garder » **l'enfermait sur
+ * l'écran Programme sans barre d'onglets** (voir `rendre()`). Les deux moitiés du problème.
+ *
+ * ⚠️ **UNE SEULE séance peut être en cours** (`CLE_EN_COURS` est une clé unique). « Changer »
+ * quand des séries sont déjà loguées n'est donc PAS gratuit : il faut soit les **enregistrer**,
+ * soit les **perdre**. On ne fabrique pas un troisième chemin qui ferait croire qu'on garde deux
+ * séances ouvertes — ce serait un mensonge d'interface. On DIT ce que chaque porte coûte.
+ */
 function quitter() {
   const { faites } = progression(etat);
+
+  // Rien de logué : il n'y a rien à peser. On le ramène au choix, sans cérémonie — c'est
+  // exactement « changer de séance », et ça ne coûte rien.
   if (!faites) {
     abandonner();
     return;
   }
+
+  const s = faites > 1 ? 's' : '';
   ouvrirFeuille({
     titre: 'Quitter la séance ?',
-    sous: `<b>${faites} série${faites > 1 ? 's' : ''}</b> ${faites > 1 ? 'sont enregistrées' : 'est enregistrée'} sur cet appareil. Rien ne sera perdu : tu reprendras où tu en es.`,
+    sous: `<b>${faites} série${s}</b> ${faites > 1 ? 'sont enregistrées' : 'est enregistrée'} sur cet appareil.`,
     items: [
       { libelle: 'Reprendre la séance', classe: 'feuille-item--primaire', faire: fermerFeuille },
       {
         libelle: 'Quitter et garder la séance',
-        sous: 'Elle t’attendra ici',
+        sous: 'Elle t’attendra ici — tu reprendras où tu en es',
         faire: async () => {
           await arreterChrono();
           await libererEcran();
           fermerFeuille();
-          rendre();
-          afficherEcran('programme');
+          // 🔴 `naviguer`, PAS `afficherEcran`. `afficherEcran` peint l'écran sans rien dire à la
+          //    coquille : `ecranCourant` restait sur « seance », donc **taper l'onglet Séance ne
+          //    faisait plus RIEN** (`naviguer` court-circuite quand la cible est déjà courante),
+          //    et le bouton retour d'Android dépilait vers un écran fantôme. Observé, headless.
+          //
+          // ⚠️ ET ON REVIENT À L'ACCUEIL, plus à « Programme ». La séance qu'il garde y est
+          //    AFFICHÉE (carte « Reprendre ») : il voit où elle est passée. L'envoyer sur un
+          //    autre écran, c'était lui faire abandonner sa séance en silence.
+          allerVers('accueil');
+        },
+      },
+      {
+        // 🔴 CE QU'IL DEMANDAIT, ET QUI N'EXISTAIT NULLE PART.
+        //    Ses séries sont ÉCRITES (elles ne sont pas jetées), puis l'accueil revient — avec
+        //    Push · Pull · Legs, à un tap. `terminer()` écrit AVANT d'ouvrir quoi que ce soit :
+        //    la séance n'est plus l'otage d'une note ([[philosophy]] règle 15).
+        libelle: 'Terminer et changer de séance',
+        sous: faites > 1
+          ? `Tes ${faites} séries sont enregistrées, puis tu choisis`
+          : 'Ta série est enregistrée, puis tu choisis',
+        faire: async () => {
+          fermerFeuille();
+          etat.position = etat.ordre.length; // la séance est close : le reste ne sera pas compté
+          await terminer();
         },
       },
     ],
@@ -408,6 +503,10 @@ async function abandonner() {
   await arreterChrono();
   await libererEcran();
   arreterBoucle();
+  // La séance n'existe plus : son écran non plus. **Le laisser affiché, c'est la section vide
+  // et sans issue** — exactement le cul-de-sac que `activerSeance()` refuse par ailleurs.
+  surEcran = false;
+  allerVers('accueil');
   rendre();
 }
 
@@ -494,6 +593,10 @@ async function terminer() {
   await libererEcran();
   etat = null;
   arreterBoucle();
+  // La séance est finie : son écran n'a plus de raison d'être. On rend la main à l'accueil —
+  // qui affiche déjà, lui, la séance qu'on vient d'écrire (« Ta dernière séance »).
+  surEcran = false;
+  allerVers('accueil');
   rendre();
 
   // La séance est écrite, l'écran est propre : la feuille ne garde plus rien en otage.
@@ -513,31 +616,23 @@ async function terminer() {
 // L'échelle est celle de **Foster (CR-10)**, la même en muscu et en course :
 // c'est ce qui rend les deux additionnables. Ce n'est pas une note de plaisir.
 
-/** @param {object} enr  la séance DÉJÀ écrite en base. La feuille l'annote, rien de plus. */
+/**
+ * @param {object} enr  la séance DÉJÀ écrite en base. La feuille l'annote, rien de plus.
+ *
+ * 🔴 La question, la grille, l'échelle et le « pourquoi » viennent de `rpe.js` — **ils ne sont
+ * plus écrits ici.** La course rendait la MÊME grille **sans question et sans explication** :
+ * deux copies, un seul sens. Or la jauge unifiée ne tient QUE si la question est la même des
+ * deux côtés (`charge = rpe × durée`, ADR 0006). **Un texte, deux écrans, aucune dérive possible.**
+ */
 function demanderRPE(enr) {
   const corps = el('div', 'rpe');
-  corps.append(el('p', 'rpe-consigne', 'À quel point cette séance a-t-elle été <b>dure</b>, dans l’ensemble&nbsp;?'));
-
-  const grille = el('div', 'rpe-grille');
-  grille.setAttribute('role', 'group');
-  grille.setAttribute('aria-label', 'RPE de séance, de 0 à 10');
-  for (let n = RPE_FOSTER.min; n <= RPE_FOSTER.max; n++) {
-    const b = el('button', 'rpe-btn', String(n));
-    b.type = 'button';
-    // ⚠️ Aucun `aria-pressed="true"`, aucune valeur par défaut, aucun « suggéré ».
-    b.setAttribute('aria-label', `RPE ${n}`);
-    b.addEventListener('click', () => noter(enr, n));
-    grille.append(b);
-  }
-  corps.append(grille);
-  corps.append(
-    el('p', 'rpe-echelle', '<span>0 · rien</span><span>5 · dur</span><span>10 · maximal</span>'),
-  );
-
-  const pourquoi = el('button', 'feuille-item feuille-item--discret', '<span>Pourquoi cette note&nbsp;?<small>Ce qu’elle sert, et ce qu’elle ne dit pas</small></span>');
-  pourquoi.type = 'button';
-  pourquoi.addEventListener('click', () => expliquerRPE(enr));
-  corps.append(pourquoi);
+  corps.append(el('p', 'rpe-consigne', QUESTION_RPE));
+  // ⚠️ Aucun `aria-pressed="true"`, aucune valeur par défaut, aucun « suggéré » : `valeur` reste
+  //    `null`. Le tap EST la déclaration — et ici il ÉCRIT (`noter`), il ne mémorise pas un choix.
+  corps.append(grilleRPE({ onChoisir: (n) => noter(enr, n) }));
+  corps.append(echelleRPE());
+  // « Revenir à ma note » rouvre CETTE feuille — une explication ramène toujours au geste.
+  corps.append(boutonPourquoiRPE(() => demanderRPE(enr)));
 
   // ⚠️ « Enregistrer sans noter » n'existe plus — et ce n'est PAS une vérité supprimée.
   // Ce bouton était le seul geste honnête d'une feuille qui, sinon, perdait la séance :
@@ -551,39 +646,6 @@ function demanderRPE(enr) {
     sous: `<b>Séance enregistrée</b> — ${derive(enr.series)} séries, ${tonnageDit(enr)}. `
       + 'Une seule note, pour toute la séance : <b>sans elle, la séance ne comptera pas dans la jauge de charge</b>.',
     corps,
-    fermer: 'Sans noter',
-  });
-}
-
-function expliquerRPE(enr) {
-  // ⚠️ Le FOND ne bouge pas d'un iota — chaque fait, chaque aveu, chaque chiffre est là.
-  //    C'est la VOIX qui change : « Je ne sais pas ce que ton 7 vaut […] et je ne le saurai
-  //    jamais […] Et je ne peux pas te le rappeler » mettait un narrateur en scène. L'app
-  //    ne se raconte plus ; elle nomme l'état de la connaissance.
-  const bloc = blocPourquoi([
-    {
-      label: SAIT,
-      texte:
-        "Ce chiffre × la **durée** de ta séance, c'est la seule mesure de charge définie **à l'identique** pour un squat et pour un 10 km (échelle de Foster). " +
-        "C'est ce qui permettra d'**additionner** ta muscu et ta course — ce que ni Strava ni Hevy ne savent faire. La conversion entre les deux, c'est **ta perception** qui la fait, pas une constante inventée.",
-    },
-    {
-      label: IGNORE,
-      sourdine: true,
-      texte:
-        "Ce que **ton** 7 vaut par rapport à celui d'un autre : **rien ne permet de le savoir, et rien ne le permettra** — l'échelle est **calibrée sur toi seul**. " +
-        "Il faut **~8 semaines** de notes pour que la jauge tienne debout, et le critère d'abandon est **signé d'avance** : si la corrélation est trop faible, **la jauge est jetée**. " +
-        "Et **aucun rappel n'est possible** : une app installée sur l'écran d'accueil n'envoie aucune notification sans serveur. **La régularité repose entièrement sur toi.**",
-    },
-  ]);
-  // ⚠️ « Revenir » fermait la feuille — donc, avant ce correctif, il PERDAIT la séance : lire
-  // le « pourquoi » de la note coûtait la séance entière. Elle ne risque plus rien, mais le
-  // cul-de-sac restait : la grille était partie, et il n'y avait plus aucun moyen de noter.
-  // On rouvre la note. Une explication ramène TOUJOURS au geste qu'elle explique.
-  ouvrirFeuille({
-    titre: 'Pourquoi cette note ?',
-    corps: bloc,
-    items: [{ libelle: 'Revenir à ma note', classe: 'feuille-item--primaire', faire: () => demanderRPE(enr) }],
     fermer: 'Sans noter',
   });
 }
@@ -645,19 +707,78 @@ async function noter(enr, rpe) {
  * **La règle, désormais : tout ce que ce rendu MONTRE, ce rendu doit savoir le CACHER.**
  * Un `hidden = false` sans `hidden = true` en face est un fantôme en puissance.
  * Le garde-fou est dans `tests/ecran-seance.test.js` : il démarre DEUX séances de suite.
+ *
+ * ══════════════════════════════════════════════════════════════════════════════
+ * 🔴 L'ÉTAT QUI MANQUAIT — et il coûtait la SORTIE de l'app (2026-07-13)
+ * ══════════════════════════════════════════════════════════════════════════════
+ *
+ *   > « J'ai du mal à **sortir de ma séance** une fois dedans, pour dire par exemple que je
+ *   >   veux juste **changer de séance**. »
+ *
+ * `en-seance` valait `Boolean(etat)` : **« une séance EXISTE »**. Mais la classe pilote la
+ * COQUILLE — elle cache la barre d'onglets et sort la barre d'action. Elle avait donc besoin
+ * d'une tout autre question : **« est-ce que je REGARDE ma séance ? »**
+ *
+ * **Les deux ont été confondues, et voici ce que ça donnait** (observé, headless, pas déduit) :
+ * il tape « Quitter et garder la séance » → l'app affiche l'écran **Programme**… et `etat`
+ * existe toujours, donc :
+ *
+ *     écran visible      programme
+ *     BARRE D'ACTION     VISIBLE      ← épinglée en bas d'un écran qui n'est pas le sien
+ *     MENU (onglets)     ABSENT       ← 🔴 il n'a plus AUCUNE navigation
+ *
+ * **Il est sur Programme, avec la barre de saisie d'une séance, et zéro menu.** La seule issue
+ * est de tuer l'app. *(« La barre de saisie est trop grosse et TOUJOURS en bas, même hors
+ * exercice » — c'est le même bug, vu de l'autre bout.)*
+ *
+ * 🎯 **Un état sans nom est un bug qui attend** ([[philosophy]] règle 18). Trois symptômes, une
+ * seule cause. On ne corrige pas les trois : **on nomme l'état.**
+ *
+ *   `etat`     → une séance EXISTE   (la donnée ; elle survit à tout, y compris à un kill d'iOS)
+ *   `surEcran` → on la REGARDE       (la vue ; elle change quand on tape un onglet)
+ *
+ * La coquille (`body.en-seance`, `#sc-bar`) suit **les deux**. Le reste suit `etat` seul.
  */
-function rendre() {
-  const enSeance = Boolean(etat);
-  document.body.classList.toggle('en-seance', enSeance);
-  $('#sc-accueil').hidden = enSeance;
-  $('#sc-vue').hidden = !enSeance;
-  $('#sc-bar').hidden = !enSeance;
 
-  if (!enSeance) {
+/**
+ * 🔴 L'onglet Séance est-il celui qu'on regarde ? **Ce n'est PAS « une séance est en cours ».**
+ * Voir le bloc ci-dessus : les confondre enfermait l'utilisateur hors de son app.
+ */
+let surEcran = true;
+
+function rendre() {
+  const seanceOuverte = Boolean(etat);      // une séance EXISTE
+  const vueSeance = seanceOuverte && surEcran; // …et c'est elle qu'on REGARDE
+
+  // 🔴 LA COQUILLE. Elle ne dépend PAS de l'existence d'une séance, mais du fait qu'on la
+  //    regarde. Le bas de l'écran appartient à l'ACTION **tant qu'on est sur l'action** — et
+  //    la navigation revient **dès qu'on en sort**. C'est tout le correctif.
+  document.body.classList.toggle('en-seance', vueSeance);
+  $('#sc-bar').hidden = !vueSeance;
+
+  // `#sc-vue` suit la DONNÉE : il vit dans `section[data-ecran="seance"]`, masquée en entier
+  // quand on est ailleurs. Son état hors écran n'a aucun effet visible.
+  $('#sc-vue').hidden = !seanceOuverte;
+
+  // 🔴 L'ACCUEIL SE REND TOUJOURS — Y COMPRIS PENDANT UNE SÉANCE.
+  //
+  //    Il n'est plus le verso de la séance : c'est un ÉCRAN, avec son onglet. Et depuis que
+  //    la séance n'a plus d'onglet à elle, **l'accueil est le SEUL chemin qui y ramène**
+  //    (la carte « Reprendre »). Un accueil rendu paresseusement serait un accueil qui, un
+  //    jour, oublierait de dire qu'une séance est ouverte : l'utilisateur aurait une séance
+  //    en cours, et aucun moyen de la retrouver. On ne joue pas à ça.
+  //
+  //    ⚠️ Oui, ça reconstruit ~30 nœuds à chaque série validée (~17×/séance) pendant que
+  //    l'accueil est masqué. C'est le prix, et il est dérisoire : `rendre()` n'est appelée
+  //    que sur des gestes, jamais dans la boucle du chrono (elle, ne touche que du texte).
+  //    **Ce dépôt a déjà payé quatre fois « le champ se remplit et l'écran ne bouge pas ».
+  //    Un rendu toujours juste vaut mieux qu'un rendu malin.**
+  rendreAccueil();
+
+  if (!seanceOuverte) {
     // ⚠️ Pas de séance = pas de bilan. Sans ça, il reste ARMÉ (visible, plein de son
     // texte) et il réapparaît tel quel dès que `#sc-vue` se rouvre, à la séance suivante.
     viderBilan();
-    rendreAccueil();
     return;
   }
 
@@ -739,7 +860,7 @@ function rendreAccueil() {
     hote.append(
       el('div', 'state state--screen',
         '<h2 class="state-title">Aucun profil sur cet appareil</h2>' +
-        '<p class="state-msg">Pas de profil, donc pas de séance à faire. Importe une sauvegarde depuis l’onglet <b>Données</b>.</p>'),
+        '<p class="state-msg">Pas de profil, donc pas de séance à faire. Importe une sauvegarde depuis <b>Moi</b>.</p>'),
     );
     return;
   }
@@ -749,6 +870,46 @@ function rendreAccueil() {
     const series = s.exercices.reduce((n, e) => n + e.series, 0);
     return `${derive(s.exercices.length)} exercices · ${derive(series)} séries`;
   };
+
+  // ══════════════════════════════════════════════════════════════════════
+  // 🔴 UNE SÉANCE EST OUVERTE — et depuis que la séance n'a plus d'onglet, C'EST ICI, ET
+  //    NULLE PART AILLEURS, QU'ON LA RETROUVE.
+  // ══════════════════════════════════════════════════════════════════════
+  //
+  // Ce cas n'existait PAS : quand une séance était en cours, l'accueil était masqué en
+  // entier. L'onglet « Séance » servait de porte de retour. **Cette porte vient de fermer**
+  // — il en faut donc une autre, et elle doit être la première chose qu'on voit.
+  //
+  // ⛔ ET ON N'OFFRE PLUS LES AUTRES SÉANCES ICI. `CLE_EN_COURS` est une clé UNIQUE : taper
+  //    « Démarrer » sur Pull pendant qu'une séance Push est ouverte **écraserait `etat`** —
+  //    ses séries loguées, silencieusement, sans un mot. En rendant l'accueil atteignable
+  //    pendant une séance, on vient de CRÉER ce chemin ; on le referme dans le même geste.
+  //    Changer de séance existe déjà, et il DIT ce qu'il coûte : c'est « × Quitter » →
+  //    « Terminer et changer de séance » (voir `quitter()`), qui ENREGISTRE avant de rendre
+  //    la main. On ne fabrique pas une seconde porte qui, elle, jetterait tout.
+  if (etat) {
+    const p = progression(etat);
+    // Le vocabulaire du protagoniste, tel quel : c'est LE geste de cet écran tant qu'une
+    // séance est ouverte. Pas de classe de plus — pas de CSS morte à entretenir.
+    const reprise = el('button', 'sc-hero');
+    reprise.type = 'button';
+    reprise.dataset.reprendre = '';
+    reprise.append(
+      el('span', 'sc-hero-kicker', 'Séance en cours'),
+      el('span', 'sc-hero-nom', echapper(etat.seance)),
+      el('span', 'sc-hero-meta', `${derive(p.faites)} / ${derive(p.total)} séries`),
+      el('span', 'sc-hero-go', 'Reprendre'),
+    );
+    reprise.addEventListener('click', () => allerVers('seance'));
+    hote.append(reprise);
+
+    // La course, elle, n'entre en conflit avec rien : on peut loguer une sortie d'hier
+    // pendant qu'une séance de salle est ouverte. Elle reste.
+    hote.append(boutonCourse(() => ouvrirSaisieCourse({ apres: apresCourse })));
+    const jaugeEnCours = carteCharge(charge);
+    if (jaugeEnCours) hote.append(jaugeEnCours);
+    return;
+  }
 
   // ── 🔴 LE CONFLIT DE PLACEMENT — AVANT le geste, comme la sécurité sur l'écran Programme ──
   //
@@ -1685,7 +1846,13 @@ function majLigneActive() {
   if (l) l.textContent = `${chargeDite(blocSaisi(), brouillonCourant.charge_kg, true)} × ${brouillonCourant.reps}`;
 }
 
-export function brancherSeance() {
+/**
+ * @param {{naviguer?: (vers: string) => void}=} o  `naviguer` = la porte de la coquille
+ *        (`main.js`) : elle empile l'historique et tient `ecranCourant`. Voir `allerVers`.
+ */
+export function brancherSeance({ naviguer } = {}) {
+  if (naviguer) allerVers = naviguer;
+
   $('#sc-quitter').addEventListener('click', quitter);
   $('#sc-reglages').addEventListener('click', reglages);
   $('#sc-menu').addEventListener('click', menuExercice);

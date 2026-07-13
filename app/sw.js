@@ -19,7 +19,7 @@
  * portée de CONTRÔLE DE PAGES, pas d'interception d'URL.
  */
 
-const VERSION = 'v6';
+const VERSION = 'v8';
 const CACHE = `pp-shell-${VERSION}`;
 
 /** Le shell : tout ce qu'il faut pour que l'app démarre hors ligne. */
@@ -51,6 +51,10 @@ const SHELL = [
   // shell, le module principal échoue à s'évaluer et l'accueil ne s'ouvre plus du tout.
   './js/course.js',
   './js/ecran-course.js',
+
+  // 🔴 LE RPE DE SÉANCE — la question, l'échelle, le « pourquoi ». Il est importé par les DEUX
+  // écrans (salle et route) : absent du shell, ni la séance ni la course ne s'ouvrent hors ligne.
+  './js/rpe.js',
   './fonts/fonts.css',
   './fonts/hanken-grotesk-latin.woff2',
   './fonts/hanken-grotesk-latin-ext.woff2',

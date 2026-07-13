@@ -54,6 +54,24 @@ import { chargeDepart, derive, mesureKg, NIVEAUX } from './valeurs.js';
 // au lieu de l'empiler dans un mur en tête de page. Le contenant existait ; on s'en sert.
 import { adaptationsMuscuEnAvis, avisDepuisTexte } from '../../src/lib/avis.js';
 
+/**
+ * 🔴 LA PORTE DE NAVIGATION DE LA COQUILLE — injectée par `main.js`, jamais importée
+ * (`main.js` importe déjà cet écran : l'importer en retour serait un cycle).
+ *
+ * L'état vide envoyait l'utilisateur importer une sauvegarde via `afficherEcran`, qui **peint
+ * l'écran sans rien dire à la coquille** : `ecranCourant` restait sur « semaine », le retour
+ * d'Android dépilait dans le vide, et l'onglet actif mentait. C'est **le même bug que `93f4c9c`**,
+ * au même endroit du code, sur l'autre écran — et il ne se voyait pas, parce qu'il fallait une
+ * app SANS PROFIL pour l'atteindre. Le repli sur `afficherEcran` garde l'écran utilisable dans
+ * les tests qui ne montent que lui ; l'app, elle, injecte.
+ */
+let allerVers = afficherEcran;
+
+/** @param {{naviguer?: (vers: string) => void}=} o */
+export function brancherProgramme({ naviguer } = {}) {
+  if (naviguer) allerVers = naviguer;
+}
+
 /** Une valeur typée par la taxonomie. Le « ~ » de l'estimé est posé par la CSS. */
 function valeur(niveau, texte, fort = false) {
   const n = el('span', `val ${NIVEAUX[niveau].classe}${fort ? ' val--strong' : ''}`, echapper(texte));
@@ -383,11 +401,30 @@ function rendreExercice(exo, notesRef, avis) {
   // Ce sont des CIBLES (ce qu'on te demande), pas des observations : ni accent,
   // ni traitement « mesuré ». La taxonomie ne s'applique qu'aux valeurs qui
   // prétendent décrire l'utilisateur.
+  // 🔴 « 3 × 3–6 » S'AFFICHAIT SUR TROIS LIGNES. Vu à l'œil, dans une capture — pas dans un test.
+  //
+  //     `.presc-bloc` est un `display:flex; flex-direction:column`. Or un conteneur flex fait de
+  //     CHACUN de ses enfants un item — **y compris des nœuds de TEXTE nus**. « 3 », le « × » et
+  //     « 3–6 » étaient donc trois items, empilés verticalement :
+  //
+  //          3                     3–4          3–5 min
+  //          ×                     RIR          REPOS
+  //        3–6
+  //      SÉRIES × REPS
+  //
+  //     Sur **chaque carte d'exercice**, la valeur la plus lue du programme était illisible, et
+  //     la carte prenait une ligne de plus. C'est un morceau non négligeable du « je trouve ça
+  //     toujours trop chargé » : ce n'était pas la quantité, c'était **la casse**.
+  //
+  //     La valeur est maintenant un SEUL nœud (`.presc-val`) : un item, une ligne. Les deux
+  //     autres blocs n'avaient qu'un enfant — ils ne pouvaient pas exhiber le défaut.
+  //     ⚠️ Aucun `<b>` nu ne doit redevenir enfant direct d'un `.presc-bloc`.
+  const val = (html) => `<span class="presc-val">${html}</span>`;
   const presc = el('div', 'exo-presc');
   presc.append(
-    el('span', 'presc-bloc', `<b>${exo.series}</b> × <b>${echapper(exo.reps)}</b><span class="presc-lab">séries × reps</span>`),
-    el('span', 'presc-bloc', `<b>${echapper(exo.rir)}</b><span class="presc-lab">RIR</span>`),
-    el('span', 'presc-bloc', `<b>${echapper(exo.repos)}</b><span class="presc-lab">repos</span>`),
+    el('span', 'presc-bloc', val(`<b>${exo.series}</b> × <b>${echapper(exo.reps)}</b>`) + '<span class="presc-lab">séries × reps</span>'),
+    el('span', 'presc-bloc', val(`<b>${echapper(exo.rir)}</b>`) + '<span class="presc-lab">RIR</span>'),
+    el('span', 'presc-bloc', val(`<b>${echapper(exo.repos)}</b>`) + '<span class="presc-lab">repos</span>'),
   );
   li.append(presc);
 
@@ -771,13 +808,60 @@ function rendre() {
   //    y était collé : l'onglet du mercredi devenait trois fois plus large que les autres et
   //    poussait jeudi → dimanche hors de l'écran. Le fait n'est pas perdu — il est descendu
   //    sous la séance (`lignePlacement`), là où il veut dire quelque chose.
+  //
+  // 🔴 TROIS JOURS SUR SEPT ÉTAIENT HORS DE L'ÉCRAN — et rien ne le disait.
+  //
+  // Mesuré : sept boutons portant « Lundi » **et** « Push » font ~500 px de large. L'écran en
+  // fait 390. `.jours` a un `overflow-x: auto` **sans barre** (`scrollbar-width: none`) : le
+  // vendredi était coupé en deux, samedi et dimanche **invisibles**, et **aucune affordance** ne
+  // laissait deviner qu'on pouvait faire glisser. Un onglet qu'on ne peut pas voir est un onglet
+  // qui n'existe pas. (C'est le troisième défaut d'affichage que ce sélecteur produit ; les deux
+  // premiers — le Markdown brut, le marqueur « jambes lourdes » collé au libellé — sont déjà
+  // corrigés. **Il fabriquait trop de largeur, voilà la cause commune.**)
+  //
+  // 🔴 ET IL DISAIT « PUSH » DEUX FOIS. Le nom de la séance est déjà le `<h2>` juste en dessous
+  // (`seance-nom`). Le porter AUSSI dans l'onglet, c'était **le même fait, à plat, deux fois**,
+  // à 40 px d'écart — et c'est **exactement** ce qui coûtait la largeur.
+  //
+  // → L'onglet ne porte plus qu'UN JOUR (« LUN ») et un point : il y a quelque chose, ou non.
+  //   **Zéro mot ajouté, zéro mot perdu** — le nom descend d'un cran, là où il est déjà.
+  //   Les sept jours tiennent. C'est une SEMAINE, et ça se voit enfin comme une semaine.
+  //
+  // ⚠️ Le libellé complet reste porté par `aria-label` : ce n'est pas une troncature (une
+  //    troncature ment), c'est une hiérarchie. Le lecteur d'écran, lui, entend « Lundi — Push ».
+  const brut = (s) => String(s).replace(/\*\*/g, '').trim();
+  const court = (s) => (/^jour\s+\d+$/i.test(s) ? s.replace(/^jour\s+/i, 'J') : s.slice(0, 3));
+
   p.jours.forEach((nom, i) => {
     const b = el('button', 'jour-btn');
     b.type = 'button';
     b.dataset.jour = String(i);
     b.setAttribute('role', 'tab');
     const [num, titre] = nom.split(' — ');
-    b.append(el('span', 'jour-num', riche(num.replace('Jour ', 'J'))), el('span', 'jour-nom', riche(titre ?? nom)));
+    const jour = brut(num);
+    const quoi = brut(titre ?? '');
+    b.setAttribute('aria-label', quoi ? `${jour} — ${quoi}` : jour);
+    b.append(el('span', 'jour-num', echapper(court(jour))));
+
+    // ⚠️ LE MARQUEUR NE DOIT PAS EFFACER LA COURSE. Un point unique aurait peint le samedi
+    //    (« Course — séance-clé ») exactement comme le lundi (« Push ») : or « quel jour je
+    //    cours » est LA question de ce produit. Le coureur garde son glyphe — **zéro mot, et
+    //    rien à apprendre**. Ce n'est pas un code couleur : c'est un bonhomme qui court.
+    //
+    // ⚠️ Et l'occupation se lit sur la MÊME condition que `rendreJour()` (« ce jour a-t-il une
+    //    séance qui existe VRAIMENT dans le cycle ? »). Un point qui dirait « occupé » là où le
+    //    panneau affiche « Repos » serait un point qui MENT — et un repli (`jourDe`) suffit à
+    //    fabriquer ce mensonge si on l'interroge autrement.
+    const j = jourDe(p, i);
+    const pt = el('span', 'jour-pt');
+    if (j.course) {
+      pt.classList.add('jour-pt--course');
+      pt.textContent = '🏃';
+    } else if (j.seance != null && p.seances[j.seance]) {
+      pt.classList.add('jour-pt--plein');
+    }
+    b.append(pt);
+
     b.addEventListener('click', () => rendreJour(i));
     nav.append(b);
   });
@@ -845,7 +929,7 @@ function vide() {
   const b = el('button', 'state-btn', 'Importer mes données');
   b.type = 'button';
   b.addEventListener('click', () => {
-    afficherEcran('donnees');
+    allerVers('donnees'); // la PORTE, pas le pinceau — voir `allerVers` en tête de fichier
     $('#btn-import').click();
   });
   actions.append(b);

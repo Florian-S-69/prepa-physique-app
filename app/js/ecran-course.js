@@ -57,9 +57,13 @@ import { derive } from './valeurs.js';
 import { enregistrerSortie, supprimerSortie } from './moteur.js';
 import { dateLocale } from './seance.js';
 import {
-  ZONES_COURSE, ZONE_DEFAUT, RPE_FOSTER,
+  ZONES_COURSE, ZONE_DEFAUT,
   allureDite, dureeDite, kmDit, nomZone, trousDe,
 } from './course.js';
+// 🔴 LA MÊME QUESTION, LE MÊME TEXTE, LES DEUX SPORTS. La grille du RPE était rendue ici **sans
+// question et sans explication** ; celle de la muscu POSE la question. Même échelle, sens donné
+// une fois sur deux — alors que c'est **parce que la question est la même** qu'elles s'additionnent.
+import { blocRPE } from './rpe.js';
 // 🔴 Le lundi d'une date vient du MOTEUR (`charge.js`), pas de l'app : c'est LUI qui découpe
 // `chargesHebdo().semaines`. Deux définitions de « la semaine », ce serait un jour deux semaines.
 import { lundiDe } from '../../src/lib/charge.js';
@@ -111,10 +115,33 @@ export function ouvrirSaisieCourse({ apres } = {}) {
   corps.append(
     champ('crs-date', 'Date', { type: 'date', valeur: aujourdhui }),
     champ('crs-km', 'Distance', { unite: 'km' }),
-    // Une durée en MINUTES, et rien d'autre. Deux champs (h + min) seraient deux fois plus de
-    // friction pour une donnée qu'on saisit une fois. 3 h 20 → « 200 ». C'est sans ambiguïté.
-    champ('crs-duree', 'Durée', { mode: 'numeric', unite: 'min' }),
   );
+
+  // ── 🔴 LA DURÉE — EN HEURES ET EN MINUTES ────────────────────────────────────────────
+  // Elle se saisissait **en minutes, et en minutes seulement** : un 30 km en 3 h 20, c'était
+  // **200 à taper**. Le champ ne demandait pas une durée, il demandait **une conversion** —
+  // faite au pouce, après trois heures de course. Et un « 20 » tapé pour « 200 » **est une durée
+  // valide** : aucun garde-fou ne peut l'attraper. Voir `course.js dureeEnMinutes`.
+  //
+  // Une sortie d'une heure ne coûte rien de plus : on laisse `h` vide. Le moteur, lui, ne connaît
+  // toujours que des minutes — la conversion vit dans `course.js`, une fois, et elle est testée.
+  const duree = el('div', 'champ-inline');
+  duree.append(el('label', 'champ-inline-lab', 'Durée'));
+  const duo = el('div', 'crs-duo');
+  const boite = (id, unite, ariaLabel) => {
+    const b = el('div', 'champ-inline-boite');
+    const i = el('input');
+    i.id = id;
+    i.setAttribute('type', 'text');
+    i.setAttribute('inputmode', 'numeric');
+    i.setAttribute('placeholder', '—');
+    i.setAttribute('aria-label', ariaLabel);
+    b.append(i, el('span', 'champ-inline-unite', echapper(unite)));
+    return b;
+  };
+  duo.append(boite('crs-duree-h', 'h', 'Durée — heures'), boite('crs-duree-min', 'min', 'Durée — minutes'));
+  duree.append(duo);
+  corps.append(duree);
 
   // La ZONE — les cinq que le moteur accepte (`journal.js TYPES_SORTIE`), nommées par lui
   // (`vdot.js ZONES`). Pas de champ libre : une zone inconnue serait refusée à l'écriture.
@@ -133,29 +160,22 @@ export function ouvrirSaisieCourse({ apres } = {}) {
   zoneBloc.append(zoneLab, select);
   corps.append(zoneBloc);
 
-  // ── LE RPE — la donnée pivot. La MÊME échelle qu'en muscu, et c'est tout le point. ──
+  // ── 🔴 LE RPE — la donnée pivot, et il est enfin ANCRÉ ────────────────────────────────
+  //
+  //   > « En muscu on sait qu'on parle de répétitions en plus. Mais **en course, à quoi ça
+  //   >   correspond vraiment ? Je ne sais pas.** »
+  //
+  // Cette grille était rendue **sans question et sans explication** : dix boutons et un libellé.
+  // Celle de la muscu, elle, POSE la question et l'explique derrière un tap. **Même grille, sens
+  // donné une fois sur deux** — et c'est justement parce que la question est la MÊME que les deux
+  // s'additionnent (ADR 0006). Le bloc vient désormais de `rpe.js` : **un seul texte, deux écrans.**
   let rpe = null; // 🔴 rien n'est coché. Rien.
-  const rpeBloc = el('div', 'crs-rpe');
-  rpeBloc.append(el('div', 'champ-inline-lab', 'RPE de séance <span class="crs-opt">— sans lui, hors jauge</span>'));
-  const grille = el('div', 'rpe-grille');
-  grille.setAttribute('role', 'group');
-  grille.setAttribute('aria-label', 'RPE de séance, de 0 à 10');
-  for (let n = RPE_FOSTER.min; n <= RPE_FOSTER.max; n++) {
-    const b = el('button', 'rpe-btn', String(n));
-    b.type = 'button';
-    b.dataset.rpe = String(n);
-    b.setAttribute('aria-pressed', 'false');
-    b.setAttribute('aria-label', `RPE ${n}`);
-    b.addEventListener('click', () => {
-      rpe = n;
-      for (const autre of grille.children) {
-        autre.setAttribute('aria-pressed', String(Number(autre.dataset.rpe) === n));
-      }
-    });
-    grille.append(b);
-  }
-  rpeBloc.append(grille, el('p', 'rpe-echelle', '<span>0 · rien</span><span>5 · dur</span><span>10 · maximal</span>'));
-  corps.append(rpeBloc);
+  corps.append(blocRPE({
+    onChoisir: (n) => { rpe = n; },
+    // 🔴 « Pourquoi cette note ? » ROUVRE le formulaire en sortant — voir `rouvrir()`.
+    revenir: () => rouvrir(),
+    cout: 'sans lui, hors jauge',
+  }));
 
   // ── Le DÉNIVELÉ — optionnel, et JAMAIS inventé ──
   corps.append(
@@ -164,7 +184,7 @@ export function ouvrirSaisieCourse({ apres } = {}) {
   );
   const noteD = el('button', 'sc-charge-note', '<span class="why-mark" aria-hidden="true">?</span><span>Dénivelé <b>facultatif</b> — vide, jamais zéro</span>');
   noteD.type = 'button';
-  noteD.addEventListener('click', expliquerDenivele);
+  noteD.addEventListener('click', () => expliquerDenivele(() => rouvrir()));
   corps.append(noteD);
 
   const enregistrer = async () => {
@@ -172,7 +192,8 @@ export function ouvrirSaisieCourse({ apres } = {}) {
       const sortie = await enregistrerSortie({
         date: $('#crs-date').value,
         distance_km: $('#crs-km').value,
-        duree_min: $('#crs-duree').value,
+        duree_h: $('#crs-duree-h').value,
+        duree_min: $('#crs-duree-min').value,
         type: $('#crs-zone').value,
         rpe_seance: rpe,
         denivele_m: $('#crs-dplus').value,
@@ -192,17 +213,35 @@ export function ouvrirSaisieCourse({ apres } = {}) {
     }
   };
 
-  ouvrirFeuille({
-    titre: 'Loguer une course',
-    corps,
-    items: [{ libelle: 'Enregistrer la course', classe: 'feuille-item--primaire', faire: enregistrer }],
-    fermer: 'Annuler',
-  });
+  /**
+   * 🔴 ROUVRIR LE FORMULAIRE — la fonction qui manquait, et son absence était un cul-de-sac.
+   *
+   * `ouvrirFeuille()` fait `replaceChildren()` : ouvrir une explication par-dessus le formulaire
+   * **le DÉTACHE**. Avant ce correctif, taper le « ? » du dénivelé — un bouton que l'app offre
+   * elle-même — **détruisait la saisie en cours**, et son bouton « Revenir à ma course » ne
+   * revenait à **rien** : il fermait la feuille sur un formulaire qui n'existait plus. *(Même
+   * motif que « Revenir » sur la note de RPE, corrigé le 2026-07-12 côté muscu.)*
+   *
+   * Le nœud `corps`, lui, **survit** : il est détaché, pas détruit, et un `<input>` garde sa
+   * `value` en mémoire. Le ré-attacher **restitue la saisie au caractère près** — y compris le
+   * RPE déjà tapé, qui vit dans la fermeture (`rpe`) et sur les `aria-pressed` des boutons.
+   */
+  const rouvrir = () =>
+    ouvrirFeuille({
+      titre: 'Loguer une course',
+      corps,
+      items: [{ libelle: 'Enregistrer la course', classe: 'feuille-item--primaire', faire: enregistrer }],
+      fermer: 'Annuler',
+    });
+
+  rouvrir();
 }
 
-function expliquerDenivele() {
+/** @param {() => void} revenir  ramène au formulaire — il n'est plus détruit. */
+function expliquerDenivele(revenir) {
   ouvrirFeuille({
     titre: 'Le dénivelé',
+    items: [{ libelle: 'Revenir à ma course', classe: 'feuille-item--primaire', faire: revenir }],
     corps: blocPourquoi([
       {
         label: SAIT,
@@ -222,7 +261,7 @@ function expliquerDenivele() {
           "pas » ne sont pas la même chose : un zéro faux **éteint le seul signal de fatigue mesurable** de ce moteur.",
       },
     ]),
-    fermer: 'Revenir à ma course',
+    fermer: 'Fermer',
   });
 }
 

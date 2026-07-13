@@ -36,6 +36,25 @@
 <body>
 
 <!-- ═══════════════════════════════════════════════════════════════════════
+     LE SPLASH — « donner une sensation d'application aboutie »
+     ═══════════════════════════════════════════════════════════════════════
+     La vision le décrit mot pour mot : « le fond vert lime de l'identité
+     visuelle ; le logo au centre ; le nom de l'application ». Il ne dure pas :
+     il se retire dès que la base est ouverte et que la porte a tranché.
+
+     🔴 IL SE RETIRE DU DOM — pas seulement de la vue.
+     Ce dépôt a déjà payé un « voile transparent » qui couvrait tout l'écran
+     pendant que 16 assertions étaient au vert. Une couche fixe qu'on se contente
+     de rendre transparente reste une couche fixe : elle mange les taps. Celle-ci
+     part de l'arbre (`remove()`), avec un repli par minuterie si la transition
+     ne se déclenche pas (onglet en arrière-plan, `prefers-reduced-motion`).
+     ═══════════════════════════════════════════════════════════════════════ -->
+<div class="splash" id="splash" aria-hidden="true">
+  <img class="splash-logo" src="./icons/icon-192.png" alt="" width="88" height="88">
+  <span class="splash-nom">prepa-physique</span>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════
      PORTE D'ENTRÉE — onboarding d'installation (BLOQUANT sur iOS)
      Contrainte n°1 : sans installation sur l'écran d'accueil, iOS peut effacer
      les séances (règle des 7 jours de l'ITP en onglet Safari). L'installation
@@ -115,23 +134,47 @@
   </header>
 
   <main id="vue">
+    <!-- Hors des sections : une zone `aria-live` enfermée dans un conteneur
+         `hidden` n'annonce plus rien, et l'annonce sert depuis DEUX écrans. -->
+    <p class="sr-only" id="sc-annonce" aria-live="polite"></p>
     <div id="bannieres" class="bannieres"></div>
 
     <!-- ══════════════════════════════════════════════════════════════════
-         ÉCRAN SÉANCE — LE GESTE CENTRAL (6×/semaine).
-         C'est ici qu'on ENTRE ses charges, qu'on valide ses séries, qu'on
-         lance son repos et qu'on note son RPE. Un écran, pas un article :
-         UN exercice à la fois, et la cible du geste (la barre d'action) ne
-         bouge JAMAIS.
-         Tout est construit par js/ecran-seance.js — aucune donnée en dur.
+         🏠 ACCUEIL — LA PAGE PRINCIPALE. C'est ici qu'on arrive.
+         ══════════════════════════════════════════════════════════════════
+           > « On rentre dans le truc bam et tu lances ta course. Il n'y a pas
+           >   de menu, on ne t'accompagne pas. »
+           > « Une page principale où je puisse naviguer. »
+
+         🔴 CET ÉCRAN EXISTAIT DÉJÀ — SOUS UN FAUX NOM.
+         L'onglet s'appelait « Séance » et ne menait PAS à une séance : il menait
+         au CHOIX d'une séance, à la charge de la semaine, à la dernière sortie.
+         C'était un accueil déguisé en action — et arriver dans l'app, c'était
+         donc arriver dans l'action. **Il porte enfin son nom.**
+
+         Tout est construit par js/ecran-seance.js (`rendreAccueil`).
          ══════════════════════════════════════════════════════════════════ -->
-    <section data-ecran="seance" hidden>
-      <p class="sr-only" id="sc-annonce" aria-live="polite"></p>
-
-      <!-- Pas de séance en cours : on choisit son jour. -->
+    <section data-ecran="accueil" hidden>
       <div id="sc-accueil"></div>
+    </section>
 
-      <!-- Séance en cours -->
+    <!-- ══════════════════════════════════════════════════════════════════
+         🏋️ SÉANCE — UN MODE, PAS UN ONGLET. Aucun `data-vers` ne pointe ici.
+         ══════════════════════════════════════════════════════════════════
+         LE GESTE CENTRAL (6×/semaine) : on ENTRE ses charges, on valide ses
+         séries, on lance son repos, on note son RPE. Un exercice à la fois, et
+         la cible du geste (la barre d'action) ne bouge JAMAIS.
+
+         🔴 POURQUOI CE N'EST PAS UN ONGLET, ET POURQUOI ÇA NE PEUT PAS L'ÊTRE :
+         **la barre d'onglets DISPARAÎT pendant une séance** (`body.en-seance`) —
+         le bas de l'écran appartient à l'action. Un onglet qui se supprime
+         lui-même quand on l'utilise n'est pas une destination : c'est un mode.
+         Le nommer « onglet » était la confusion d'où venait tout le reste.
+
+         On y entre depuis l'Accueil (« Démarrer », « Reprendre ») ; on en sort
+         vers l'Accueil. `data-sous-de` dit à la coquille quel onglet reste allumé.
+         ══════════════════════════════════════════════════════════════════ -->
+    <section data-ecran="seance" data-sous-de="accueil" hidden>
       <div id="sc-vue" hidden>
         <!-- En-tête COLLANT : le nom, le temps, la progression en SÉRIES.
              Jamais dans le flux qui défile. -->
@@ -197,17 +240,24 @@
       </div>
     </section>
 
-    <!-- ── Écran PROGRAMME — le moteur tourne ICI, dans le navigateur ──────
+    <!-- ── 📅 SEMAINE (ex-« Programme ») — le moteur tourne ICI, dans le navigateur ──
          Le persona sort d'IndexedDB, `src/lib/muscu.js` calcule, et les
          adaptations liées aux limitations sont rendues EN HAUT, pas enterrées.
          Tout est construit par js/programme.js : ce conteneur est vide à dessein
          (aucune donnée en dur — un chiffre écrit ici serait un chiffre qui ment).
+
+         🔴 « L'onglet Programme, je ne le comprends pas trop. »
+         Il ne s'appelait pas ce qu'il est. Cet écran montre **SEPT JOURS** et ce
+         qu'il y a dessus — c'est un CALENDRIER, pas un document. « Programme »
+         promettait une méthode ; on livrait une semaine. Et c'est aussi la
+         réponse à l'« Hybride » de la vision : muscu et course ne sont pas deux
+         menus, ce sont deux choses dans la MÊME semaine (décision du 2026-07-12).
          ─────────────────────────────────────────────────────────────────── -->
     <!-- ⛔ PAS DE <h1>Ton programme</h1>. « Du texte qui explique ce qu'on voit déjà » est
          le premier signe de la pâte IA : un titre posé au-dessus du programme pour
          annoncer que c'est le programme. Le split (« Push/Pull/Legs ») est rendu par
          js/programme.js — LUI dit quelque chose, et il vient du moteur. -->
-    <section data-ecran="programme" hidden>
+    <section data-ecran="semaine" hidden>
       <div id="prog-etat" hidden></div>
       <div id="prog" hidden></div>
     </section>
@@ -226,9 +276,25 @@
          (js/ecran-seance.js, `reglages()`). Aucune vérité n'a été perdue en route.
          ─────────────────────────────────────────────────────────────────────── -->
 
-    <!-- ── Écran DONNÉES — persistance, quota, export/import ──────────────── -->
-    <section data-ecran="donnees" hidden>
-      <h1 class="ecran-titre">Mes données</h1>
+    <!-- ══════════════════════════════════════════════════════════════════
+         🙋 MOI — le profil, l'objectif. Et RIEN de la plomberie.
+         ══════════════════════════════════════════════════════════════════
+           > « L'onglet Données sera inclus dans un menu avec un profil.
+           >   **Je n'ai pas à voir "Exporter mes données" en façade.** »
+
+         🔴 CE QUI CHANGE, ET CE QUI NE CHANGE PAS.
+         « Exporter mes données » portait `state-btn` — **l'aplat d'accent, la
+         couleur de l'ACTION** — sur l'écran qu'on ouvre pour se regarder. Le
+         geste le plus rare de l'app était peint comme le plus fréquent.
+
+         ⚠️ **L'export ne disparaît pas, et il ne le peut pas** : sans serveur,
+         **le seul backend, c'est l'utilisateur**. Un téléphone perdu sans export
+         emporte tout. Il CHANGE DE PLACE : il descend dans « Données et
+         sauvegarde » (l'écran ci-dessous), à un tap d'ici. La bannière
+         « Stockage non protégé » y mène toujours directement, en un geste.
+         ══════════════════════════════════════════════════════════════════ -->
+    <section data-ecran="moi" hidden>
+      <h1 class="ecran-titre">Moi</h1>
 
       <!-- Le profil que le moteur consomme. Il vit dans IndexedDB, pas dans le code. -->
       <div class="carte">
@@ -322,6 +388,35 @@
           <button class="state-btn state-btn--ghost" id="btn-cible-effacer" hidden>Retirer l’objectif</button>
         </div>
       </div>
+
+      <!-- 🔴 LA PORTE VERS LA PLOMBERIE — une LIGNE, pas une façade.
+           Le vocabulaire existait déjà (`ligne-etat`, ui.js) : une ligne dit ce qui EST,
+           le tap mène au reste. On ne l'invente pas ici, on l'emploie. Son état
+           (« Protégé » / « Non protégé ») est rempli par main.js — il n'est pas en dur :
+           un texte rassurant écrit dans le HTML mentirait le jour où c'est faux. -->
+      <button class="ligne-etat ligne-etat--info" type="button" id="moi-vers-donnees">
+        <span class="ligne-etat-i" aria-hidden="true">🗄️</span>
+        <span class="ligne-etat-t">Données et sauvegarde</span>
+        <span class="ligne-etat-go" id="moi-donnees-etat">—</span>
+      </button>
+    </section>
+
+    <!-- ══════════════════════════════════════════════════════════════════
+         🗄️ DONNÉES — SOUS-ÉCRAN DE « MOI ». Aucun `data-vers` ne pointe ici.
+         ══════════════════════════════════════════════════════════════════
+         Persistance, quota, export/import, installation. Tout est intact : rien
+         n'a été supprimé, tout a été DÉPLACÉ (c'est la règle de ce dépôt, et
+         elle vaut pour un écran comme pour une phrase).
+
+         `data-sous-de="moi"` garde l'onglet « Moi » allumé pendant qu'on est ici :
+         sans lui, la coquille n'aurait plus AUCUN onglet actif — et un utilisateur
+         sans repère de position est un utilisateur perdu.
+         ══════════════════════════════════════════════════════════════════ -->
+    <section data-ecran="donnees" data-sous-de="moi" hidden>
+      <button class="ecran-retour" type="button" id="donnees-retour">
+        <span aria-hidden="true">←</span> Moi
+      </button>
+      <h1 class="ecran-titre">Données</h1>
 
       <!-- Protection du stockage : on affiche le VRAI retour de persist(). -->
       <div class="carte">
@@ -498,24 +593,41 @@
     <button class="sc-cta" type="button" id="sc-terminer" hidden>Terminer la séance</button>
   </div>
 
+  <!-- ══════════════════════════════════════════════════════════════════════
+       LE MENU — trois destinations, et pas une de plus.
+       ══════════════════════════════════════════════════════════════════════
+       **Accueil · Semaine · Moi.** C'est bien le compte décidé le 2026-07-12
+       (« Hybride n'est pas un 3ᵉ menu — c'est la SEMAINE ») ; seul le NOM du
+       premier onglet change, et il change parce qu'il mentait :
+
+         · « Séance »    ne menait pas à une séance, mais au CHOIX d'une séance.
+                         Et une vraie séance SUPPRIME cette barre. → c'est l'ACCUEIL.
+         · « Programme » ne montrait pas une méthode, mais SEPT JOURS. → SEMAINE.
+         · « Données »   n'est pas une destination : c'est la plomberie du profil.
+                         → elle passe sous MOI.
+
+       ⚠️ La séance et l'écran Données n'ont PAS d'onglet : ce sont des écrans
+       qu'on ATTEINT, pas des lieux où l'on vit. Les mettre au menu, c'était
+       demander à l'utilisateur de ranger sa maison à notre place.
+       ══════════════════════════════════════════════════════════════════════ -->
   <nav class="onglets" aria-label="Navigation principale">
-    <button class="onglet" data-vers="seance">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
-        <path d="M6.5 6.5v11M17.5 6.5v11M3.5 9v6M20.5 9v6M6.5 12h11"/>
+    <button class="onglet" data-vers="accueil">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M3.5 10.5 12 3.5l8.5 7M5.5 9.5V20h13V9.5M10 20v-6h4v6"/>
       </svg>
-      <span>Séance</span>
+      <span>Accueil</span>
     </button>
-    <button class="onglet" data-vers="programme">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
-        <path d="M5 4h14v16H5zM9 8h6M9 12h6M9 16h3"/>
+    <button class="onglet" data-vers="semaine">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M4 5.5h16v15H4zM4 10h16M8.5 3v4M15.5 3v4M8 14h2M14 14h2M8 17.5h2M14 17.5h2"/>
       </svg>
-      <span>Programme</span>
+      <span>Semaine</span>
     </button>
-    <button class="onglet" data-vers="donnees">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
-        <ellipse cx="12" cy="6" rx="8" ry="3"/><path d="M4 6v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/>
+    <button class="onglet" data-vers="moi">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <circle cx="12" cy="8" r="3.8"/><path d="M4.5 20.5c0-3.6 3.4-6 7.5-6s7.5 2.4 7.5 6"/>
       </svg>
-      <span>Données</span>
+      <span>Moi</span>
     </button>
   </nav>
 </div>

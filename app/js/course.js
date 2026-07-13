@@ -90,20 +90,58 @@ export function nombreOuNull(v) {
 }
 
 /**
+ * 🔴 UNE DURÉE SE SAISIT EN **HEURES + MINUTES**. Le moteur, lui, compte en minutes.
+ *
+ * ── Le défaut ─────────────────────────────────────────────────────────────────
+ *   > Un 30 km en **3 h 20**, c'est **200 minutes à taper**.
+ *
+ * Le champ unique « Durée (min) » ne demandait pas une durée : il demandait **une conversion**.
+ * Et une conversion mentale faite au pouce, après trois heures de course, est une conversion
+ * **fausse** — un « 20 » tapé à la place de « 200 » entre dans la jauge comme une sortie de
+ * 20 minutes, **et rien ne le rattrape** : `20` est une durée parfaitement valide. **Le garde-fou
+ * ne peut pas exister** ; c'est la SAISIE qu'il faut réparer.
+ *
+ * ── Pourquoi DEUX champs, et pas un champ qui accepterait « 3h20 » ─────────────
+ * Parce qu'un champ libre est **ambigu, et l'ambiguïté se résout en silence** : `320` vaut-il
+ * 320 minutes ou 3 h 20 ? Les deux se défendent, et le mauvais choix ne lève aucune erreur.
+ * **Deux champs n'ont aucun cas ambigu**, et ils coûtent le même nombre de frappes (« 3 », « 20 »
+ * contre « 200 »). Une sortie d'une heure ne demande même rien de plus : on laisse `h` vide.
+ *
+ * ⚠️ **Et `Number('') === 0`, le poison de ce fichier.** Les DEUX champs vides valent `null` —
+ * « je n'ai rien saisi » — et surtout **pas** `0`. Un `0` traverserait le journal comme une durée
+ * réelle : `charge = rpe × 0` = **une sortie qui ne pèse rien**, alors qu'elle a bien eu lieu.
+ * Le moteur (`journal.js`) refuse une durée absente **avec ses mots** ; encore faut-il l'y laisser
+ * arriver absente.
+ *
+ * @returns {number|null} minutes, ou `null` si RIEN n'a été saisi. Une saisie illisible remonte
+ *          en `NaN` — c'est au moteur de la refuser, pas à l'app de la maquiller.
+ */
+export function dureeEnMinutes(heures, minutes) {
+  const h = nombreOuNull(heures);
+  const m = nombreOuNull(minutes);
+  if (h == null && m == null) return null; // 🔴 rien saisi ≠ zéro
+  return (h ?? 0) * 60 + (m ?? 0);
+}
+
+/**
  * La SAISIE du formulaire → l'entrée que `src/lib/journal.js ajouterSortie()` sait lire.
  *
  * **Le moteur possède ce format ; l'app s'y plie.** (Exactement comme `seance.js
  * versEntreeJournal()` pour la muscu.) Rien n'est validé ici — `ajouterSortie` le fait, et il le
  * fait avec des messages déjà écrits pour un humain.
  *
+ * ⚠️ `duree_h` est **facultatif** : absent, la fonction se comporte exactement comme avant
+ * (`duree_min` seul). C'est ce qui permet au moteur et aux tests existants de ne rien changer.
+ *
  * @param {object} saisie  des chaînes, telles que les champs les rendent
  * @returns {{date, km, duree_min, type, rpe_seance, denivele_m, denivele_negatif_m}}
  */
-export function versEntreeSortie({ date, distance_km, duree_min, type, rpe_seance, denivele_m, denivele_negatif_m }) {
+export function versEntreeSortie({ date, distance_km, duree_h, duree_min, type, rpe_seance, denivele_m, denivele_negatif_m }) {
   return {
     date: String(date ?? '').trim(),
     km: nombreOuNull(distance_km),
-    duree_min: nombreOuNull(duree_min),
+    // Le moteur ne connaît QUE des minutes. La conversion vit ici, une fois, et elle est testée.
+    duree_min: dureeEnMinutes(duree_h, duree_min),
     type: String(type ?? ZONE_DEFAUT).trim().toUpperCase() || ZONE_DEFAUT,
     // 🔴 Ces trois-là restent `null` quand ils ne sont pas saisis. Voir le bloc ci-dessus.
     rpe_seance: nombreOuNull(rpe_seance),
@@ -141,13 +179,23 @@ export function allureDite(km, duree_min) {
   return a == null ? '—' : formatAllure(a);
 }
 
-/** « 1:05 » (h:mm) ou « 48 min ». Une durée saisie est MESURÉE : précision pleine. */
+/**
+ * « 3 h 20 » ou « 48 min ». Une durée saisie est MESURÉE : précision pleine.
+ *
+ * 🔴 **Elle disait « 3:20 » — exactement la forme d'une ALLURE.** Deux lignes plus bas, sur la
+ * même carte, `allureDite` rend « **5:30/km** ». **La même forme `m:ss` portait deux unités
+ * différentes** : chez un coureur, `m:ss` **est** une allure (c'est comme ça qu'on les écrit), et
+ * « 1:05 » pour une sortie d'une heure cinq se lit sans effort comme **1:05 au kilomètre**.
+ *
+ * On écrit donc l'unité. **Un format ambigu n'est pas un détail de style : c'est un chiffre qui
+ * ment à la lecture** — et il ment d'autant mieux qu'il est juste en base.
+ */
 export function dureeDite(duree_min) {
   const d = Number(duree_min);
   if (!Number.isFinite(d) || d <= 0) return '—';
   const total = Math.round(d);
   if (total < 60) return `${total} min`;
-  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
+  return `${Math.floor(total / 60)} h ${String(total % 60).padStart(2, '0')}`;
 }
 
 /** « 12,4 km » — MESURÉ, précision pleine, virgule française. */

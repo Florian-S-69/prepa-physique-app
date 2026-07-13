@@ -181,6 +181,53 @@ code { font-family: var(--font-mono); }
 .porte-echappe:hover { color: var(--text-62); }
 .porte-echappe[hidden] { display: none; }
 
+/* ═══ LE SPLASH ═══════════════════════════════════════════════════
+   « Le fond vert lime de l'identité visuelle ; le logo au centre ; le nom de
+   l'application. Cet écran n'a pas besoin de durer longtemps. »
+
+   🔴 IL N'A AUCUNE TRANSITION D'ENTRÉE, ET C'EST VOULU : il est là au premier
+   pixel peint, sinon on verrait l'app *avant* le rideau — un scintillement.
+   Il n'a qu'une transition de SORTIE. Et il quitte le DOM (main.js) : une couche
+   `fixed` transparente reste une couche `fixed`, et elle avale les taps.
+
+   ⚠️ `prefers-reduced-motion` : on ne l'anime pas. Le fondu devient instantané —
+   `transitionend` ne partira donc pas, et c'est pour ça que le retrait s'appuie
+   sur une minuterie et non sur l'événement. Voir `retirerSplash()`.
+   ════════════════════════════════════════════════════════════════ */
+.splash {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-4);
+  background: var(--acc);
+  opacity: 1;
+  /* `--dur-exit` (160 ms) : « on ne fait jamais attendre qui s'en va » (tokens.css).
+     Le splash est la chose qui s'en va par excellence — il ne doit pas se faire admirer. */
+  transition: opacity var(--dur-exit) var(--ease-out);
+}
+.splash--sort { opacity: 0; }
+.splash-logo {
+  width: 88px;
+  height: 88px;
+  border-radius: 22px;
+}
+.splash-nom {
+  font-size: var(--fs-overline);
+  font-weight: 800;
+  letter-spacing: var(--ls-overline);
+  text-transform: uppercase;
+  /* Sur l'aplat d'accent, l'encre est SOMBRE — c'est le jeton du design system pour tout ce
+     qui se pose sur `--acc` (cf. `.state-btn`). Un gris clair y serait illisible. */
+  color: var(--acc-ink);
+}
+@media (prefers-reduced-motion: reduce) {
+  .splash { transition: none; }
+}
+
 /* ═══ CADRE DE L'APP ══════════════════════════════════════════════ */
 
 .app {
@@ -408,6 +455,21 @@ main > section {
   background: var(--surface);
   padding-bottom: var(--safe-bas);
 }
+/* 🔴 LES CAPITALES — sa demande, et la nuance appliquée.
+   « Les mots doivent être petits mais les lettres toutes en majuscules. C'est beaucoup plus
+   propre et épuré. »
+
+   Il a RAISON pour les ÉTIQUETTES — et un libellé d'onglet est l'étiquette par excellence :
+   deux mots, jamais lus, seulement RECONNUS. La petite capitale espacée est le langage exact
+   d'une barre d'onglets, et c'est déjà celui de tout le reste de l'app (`.carte-titre`,
+   `.champ-inline-lab`, `.sc-plan-k`…). Le menu était la dernière chose à parler autrement.
+
+   ⚠️ Il a TORT pour le CONTENU, et la nuance est appliquée partout ailleurs : le tout-capitales
+   supprime la silhouette des mots et ralentit la lecture d'une phrase. Sur du texte, ça devient
+   MOINS lisible — et ça crie, l'inverse de l'épuré qu'il cherche.
+   → **Capitales sur les étiquettes, les en-têtes, les métadonnées. Casse normale sur le contenu.**
+   C'est un choix esthétique, donc le sien ([[philosophy]] règle 9) : la version est appliquée,
+   l'arbitrage lui revient. */
 .onglet {
   flex: 1;
   min-height: 56px;
@@ -415,14 +477,15 @@ main > section {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 3px;
+  gap: 4px;
   padding: var(--sp-2) 0;
   border: none;
   background: none;
   color: var(--text-40);
   font-size: var(--fs-caption);
-  font-weight: 700;
-  letter-spacing: 0.4px;
+  font-weight: 800;
+  letter-spacing: var(--ls-caption);
+  text-transform: uppercase;
 }
 .onglet svg { width: 22px; height: 22px; }
 .onglet.est-actif { color: var(--acc); }
@@ -656,23 +719,28 @@ main > section {
    ressembler à une bonne nouvelle. */
 .tag--warn { color: var(--text-74); border-color: var(--line-12); background: var(--fill-8); }
 
-/* ── Sélecteur de jour ────────────────────────────────────────────── */
+/* ── Sélecteur de jour — UNE SEMAINE, ET ELLE TIENT DANS L'ÉCRAN ────
+   🔴 Il débordait : sept boutons portant le jour ET le nom de la séance faisaient ~500 px
+   pour un écran de 390. `overflow-x: auto` + `scrollbar-width: none` = trois jours hors
+   champ, **sans la moindre affordance**. Un onglet qu'on ne voit pas n'existe pas.
+
+   Ce n'est plus une bande qui glisse : c'est une GRILLE de sept colonnes égales. Elle ne
+   peut plus déborder — la contrainte est structurelle, pas un réglage de largeur qui
+   redeviendrait faux à la première traduction. Le nom de la séance descend d'un cran,
+   dans le `<h2>` qui le portait DÉJÀ (il était écrit deux fois, à 40 px d'écart). */
 .jours {
-  display: flex;
-  gap: var(--sp-2);
-  overflow-x: auto;
-  scrollbar-width: none;
-  padding-bottom: 2px;
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: var(--sp-1);
 }
-.jours::-webkit-scrollbar { display: none; }
 .jour-btn {
-  flex-shrink: 0;
+  min-width: 0; /* sans lui, une colonne de grille refuse de descendre sous son contenu */
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
-  gap: 2px;
+  align-items: center;
+  gap: var(--sp-2);
   min-height: 44px;
-  padding: var(--sp-2) var(--sp-3);
+  padding: var(--sp-2) 2px;
   border-radius: var(--r-md);
   background: var(--fill-4);
   border: 1px solid var(--line-8);
@@ -686,12 +754,53 @@ main > section {
   border-color: var(--acc-30);
   color: var(--text);
 }
-.jour-num { font-size: var(--fs-caption); font-weight: 800; letter-spacing: var(--ls-caption); color: var(--text-45); }
+.jour-num {
+  font-size: var(--fs-caption);
+  font-weight: 800;
+  letter-spacing: var(--ls-caption);
+  text-transform: uppercase;
+  color: var(--text-45);
+}
 .jour-btn.est-actif .jour-num { color: var(--acc); }
-.jour-nom { font-size: var(--fs-body); font-weight: 700; }
+/* Le marqueur : « il y a quelque chose ce jour-là », ou rien. Zéro mot, zéro code à apprendre.
+   Un jour de COURSE garde son glyphe — sinon le point l'aurait peint comme une séance de salle,
+   et « quel jour je cours » est précisément la question à laquelle ce produit existe pour répondre. */
+.jour-pt {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--fill-8);
+  line-height: 1;
+}
+.jour-pt--plein { background: var(--text-45); }
+.jour-btn.est-actif .jour-pt--plein { background: var(--acc); }
+.jour-pt--course {
+  width: auto;
+  height: auto;
+  background: none;
+  font-size: 11px;
+}
 
 /* ── La séance ────────────────────────────────────────────────────── */
-.seance-detail { display: flex; flex-direction: column; gap: var(--sp-4); }
+/* 🔴 LA COUTURE ENTRE LA SEMAINE ET LE JOUR — et c'est la plus importante de l'écran.
+   En compactant le sélecteur (sept jours au lieu de quatre et demi) et en réparant le bloc
+   `séries × reps` (trois lignes → une), l'écran a **gagné de la place** — et il l'a aussitôt
+   remplie : le juge de densité a vu passer une consigne d'exercice **au-dessus de la ligne de
+   flottaison, à 843 px sur 844**. Un écran plus compact n'est pas un écran plus lisible.
+
+     > « Il faut que ça respire plus. Là je trouve que tout est trop condensé. »
+     > **« Le défaut n'est pas la QUANTITÉ, c'est la FORME et l'ESPACEMENT. »**
+
+   La place gagnée est donc RENDUE, là où elle sépare deux choses différentes : le CALENDRIER
+   (quel jour) et le JOUR (ce qu'il y a dessus). Rien ne disparaît — tout descend d'un cran. */
+.seance-detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+  margin-top: var(--sp-3);
+  padding-top: var(--sp-4);
+  border-top: 1px solid var(--line-6);
+}
 .seance-nom {
   margin: 0;
   font-size: var(--fs-title-s);
@@ -741,8 +850,15 @@ main > section {
   border-radius: var(--r-input);
   background: var(--fill-3);
 }
+/* 🔴 UN CONTENEUR FLEX FAIT DE CHAQUE NŒUD DE TEXTE NU UN ITEM.
+   « <b>3</b> × <b>3–6</b> » posait donc TROIS items dans cette colonne — « 3 », « × », « 3–6 »
+   — empilés verticalement, sur chaque carte d'exercice. La valeur la plus lue du programme
+   s'affichait en escalier. Vu à l'œil, dans une capture ; invisible pour 498 tests verts
+   (le harnais n'a « aucune mise en page, aucune géométrie »).
+   La valeur est désormais enveloppée dans `.presc-val` : un item, une ligne. */
 .presc-bloc {
   flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -752,6 +868,7 @@ main > section {
   color: var(--text-74);
   text-align: center;
 }
+.presc-val { white-space: nowrap; }
 .presc-bloc b { color: var(--text); font-weight: 700; }
 .presc-lab {
   font-family: var(--font-sans);
@@ -796,8 +913,18 @@ main > section {
 
 :root { --sc-bar-h: 0px; }
 
-/* Pendant l'effort : zéro navigation. Le bas de l'écran est l'ACTION,
-   pas un menu. La barre d'onglets rend sa place à la barre d'action. */
+/* 🔴 `en-seance` VEUT DIRE « JE REGARDE MA SÉANCE » — pas « une séance existe ».
+   La distinction n'est pas byzantine : c'est elle qui a enfermé l'utilisateur hors de son app.
+
+   Pendant l'effort, zéro navigation : le bas de l'écran est l'ACTION, pas un menu. Il l'a
+   accepté, à une condition — « tant que c'est bien clair dans l'écran qu'on peut en sortir ».
+   La règle est bonne. **C'est sa CONDITION D'APPLICATION qui était fausse.**
+
+   `ecran-seance.js` posait la classe sur `Boolean(etat)` : elle restait donc collée au <body>
+   APRÈS la sortie. Résultat observé : sur l'écran Programme, la barre d'action d'une séance
+   épinglée en bas, **et pas une seule barre d'onglets**. Aucune issue au doigt.
+
+   La classe suit désormais `etat && surEcran`. Voir `rendre()`. */
 body.en-seance .onglets { display: none; }
 body.en-seance main { padding-bottom: calc(var(--sc-bar-h) + var(--sp-4)); }
 
@@ -1607,6 +1734,33 @@ body.en-seance main { padding-bottom: calc(var(--sc-bar-h) + var(--sp-4)); }
   border-left-color: var(--acc);
   color: var(--text);
 }
+/* 🔴 « Non protégé » ne se peint pas comme « Pourquoi ? ».
+   La ligne « Données et sauvegarde » (écran Moi) porte l'ÉTAT du stockage à sa droite.
+   Quand il est mauvais, il doit se lire sans ouvrir — sinon ranger la plomberie derrière
+   un tap l'aurait rendue MUETTE, ce qui est précisément l'erreur qu'on ne commet pas ici.
+   ⚠️ Pas d'accent : `--acc` est la couleur de l'ACTION dans ce système. Une alerte qui
+   porte le costume de l'action se lit comme une bonne nouvelle (leçon de `6868e79`). */
+.ligne-etat-go--alerte { color: var(--danger); }
+
+/* ── Le retour d'un sous-écran ─────────────────────────────────────
+   « Données » n'a pas d'onglet : il lui faut donc une sortie ÉCRITE. Un « ← » nu est une
+   convention, pas une phrase — on nomme la destination, comme pour « × Quitter ». */
+.ecran-retour {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-height: 44px;
+  padding: 0 var(--sp-3) 0 0;
+  border: none;
+  background: none;
+  color: var(--text-55);
+  font-family: inherit;
+  font-size: var(--fs-body-s);
+  font-weight: 700;
+  cursor: pointer;
+}
+.ecran-retour:hover { color: var(--text); }
 
 /* ── L'en-tête du programme ────────────────────────────────────────
    ⛔ Plus de <h1>Ton programme</h1> : « du texte qui explique ce qu'on voit
@@ -1698,11 +1852,25 @@ body.en-seance main { padding-bottom: calc(var(--sc-bar-h) + var(--sp-4)); }
    hauteur : c'est un doigt). Rien de neuf ; le geste doit avoir la même allure
    partout. */
 .crs-form { display: flex; flex-direction: column; gap: var(--sp-4); }
-.crs-rpe { display: flex; flex-direction: column; gap: var(--sp-2); }
+/* Le bloc de RPE vient de `rpe.js` — le MÊME qu'en muscu. Il portait ici une classe à lui
+   (`.crs-rpe`) et un texte à lui : deux copies de la même échelle, et le SENS n'était donné
+   que d'un côté. Une seule classe, un seul texte. */
+.crs-form .rpe { display: flex; flex-direction: column; gap: var(--sp-2); }
+/* Dans un formulaire, la question est une ligne parmi d'autres — pas le titre d'une feuille. */
+.crs-form .rpe-consigne { margin: 0 0 var(--sp-2); font-size: var(--fs-body-s); }
 /* Le coût du trou, DIT — pas caché : sans RPE, la sortie n'entre pas dans la jauge.
    Elle entre quand même au carnet : la course est le PRODUIT, le RPE est l'ANNOTATION. */
-.crs-opt { text-transform: none; letter-spacing: 0; color: var(--text-40); font-weight: 600; }
-.crs-rpe .rpe-echelle { margin-bottom: 0; }
+.crs-opt { text-transform: none; letter-spacing: 0; color: var(--text-40); font-weight: 600; margin-left: 4px; }
+.crs-form .rpe-echelle { margin-bottom: var(--sp-2); }
+
+/* ── 🔴 LA DURÉE : DEUX CASES, `h` ET `min` ───────────────────────────
+   Elle se saisissait en MINUTES SEULES : un 30 km en 3 h 20, c'était 200 à taper. Le champ ne
+   demandait pas une durée, il demandait une CONVERSION — au pouce, après trois heures de course.
+   Et un « 20 » tapé pour « 200 » **est une durée valide** : aucun garde-fou ne pouvait
+   l'attraper.
+   Les deux cases sont à parts ÉGALES : `h` n'est pas un appoint de `min`, c'est l'autre moitié
+   de la même donnée. Et l'une comme l'autre peut rester vide — 45 min ne coûte rien de plus. */
+.crs-duo { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-2); }
 /* ⚠️ Ici — et SEULEMENT ici — un bouton de RPE peut être « coché ». C'est un
    FORMULAIRE : le tap choisit, il ne valide pas (à la fin d'une séance de muscu,
    au contraire, le tap EST la déclaration et rien n'est jamais pré-coché).
