@@ -74,11 +74,17 @@ import {
   progressionDeCharge,
   validerSerie, corrigerSerie,
   supprimerSerie, ajouterSerie, retirerSerie, passerExercice, faireMaintenant,
+  // 🔴 LES TROIS VERBES QUI MANQUAIENT. « Des exercices qui sont imposés » — c'est fini.
+  ajouterExercice, remplacerExercice, retirerExercice,
   // 🔴 DEUX fonctions, dans cet ordre : la séance s'écrit, PUIS elle s'annote.
   terminerSeance, noterSeance,
   chargeSuivante, etatCharge, estAuPoidsDuCorps, resumeBloc,
   seriesAuPoidsDuCorps, detailTonnage, RIR_MAX, RIR_CHOIX,
 } from './seance.js';
+// 🔴 LE CHOIX LIBRE. Le sélecteur d'exercice affiche le verdict du moteur (`src/lib/libre.js`) ;
+// il ne décide rien. `NOM_SEANCE_LIBRE` est le nom qui part au JOURNAL — écrit à un seul endroit.
+import { contexteChoix, ouvrirChoixExercice, programmeDUnExercice } from './choisir.js';
+import { NOM_SEANCE_LIBRE } from '../../src/lib/libre.js';
 // 🔴 LE RPE DE SÉANCE — la question, la grille, l'échelle et le « pourquoi », en UN seul endroit.
 // L'écran de course rendait la même grille SANS la question et SANS l'explication. La jauge
 // unifiée ne tient que si la question est la même des deux côtés (ADR 0006).
@@ -183,6 +189,10 @@ export async function initSeance(resultat) {
   charge = resultat?.charge ?? null;
   placement = resultat?.placement ?? null;
   avis = programme?.limitations ? adaptationsMuscuEnAvis(programme.limitations) : [];
+  // 🔴 Le sélecteur d'exercice juge avec le MÊME persona, le MÊME programme et le MÊME journal que
+  // l'écran — ceux que `genererProgramme()` vient de rendre. Il ne refait tourner aucun moteur :
+  // un second calcul serait une seconde vérité (et c'est la charge prescrite qui divergerait).
+  contexteChoix({ persona, programme, journal: resultat?.journal ?? null });
 
   try {
     historique = (await lireTout('seances')) ?? [];
@@ -394,9 +404,30 @@ async function valider(rir) {
 // Démarrer / reprendre / quitter
 // ══════════════════════════════════════════════════════════════════════
 
-async function demarrer(jour) {
+/**
+ * 🔴 LA SÉANCE LIBRE — celle qui n'était pas au programme.
+ *
+ * Elle n'a **aucun chemin à elle**. C'est un programme d'une seule séance, passé à la MÊME
+ * `creerSeance()`. Elle finit donc dans le même `terminerSeance()`, le même magasin `seances`, le
+ * même journal, la même jauge sRPE. **Elle COMPTE.** Un second chemin d'enregistrement serait une
+ * séance que le moteur ne verrait pas — le bug n°1 de ce projet, rejoué à l'identique.
+ */
+async function demarrerLibre() {
+  await ouvrirChoixExercice({
+    titre: 'Séance libre',
+    apres: async (exercice) => {
+      programmeLibre = programmeDUnExercice(exercice, NOM_SEANCE_LIBRE);
+      await demarrer(0, programmeLibre);
+    },
+  });
+}
+
+/** Le programme d'une séance libre en cours — il ne vient pas du moteur, il vient de son choix. */
+let programmeLibre = null;
+
+async function demarrer(jour, source = null) {
   etat = creerSeance({
-    programme,
+    programme: source ?? programme,
     jour,
     debut: Date.now(),
     // 🔴 Le poids de corps est FIGÉ ICI, pour toute la durée de cette séance.
@@ -829,12 +860,16 @@ function rendre() {
 function suivanteDuCycle() {
   if (!programme?.seances?.length) return 0;
   if (!historique.length) return 0;
-  const dernier = historique[historique.length - 1]?.seance;
-  const i = programme.seances.findIndex((s) => s.nom === dernier);
-  // La dernière séance n'appartient pas à ce programme (le profil a changé) : on ne
-  // fabrique pas une rotation à partir de rien — on repart du début du cycle.
-  if (i < 0) return 0;
-  return (i + 1) % programme.seances.length;
+  // 🔴 ON REMONTE JUSQU'À LA DERNIÈRE SÉANCE **DU CYCLE**. Une séance LIBRE (« j'avais envie de
+  //    tirer aujourd'hui ») n'est pas une étape du split : la compter remettrait la rotation à
+  //    zéro et lui referait sa Push le lendemain de sa Push. Elle est loguée, elle compte dans la
+  //    charge — elle ne DÉPLACE simplement pas le cycle. Même logique qu'un profil changé : on ne
+  //    fabrique pas une rotation à partir d'une séance qui n'appartient pas au programme.
+  for (let k = historique.length - 1; k >= 0; k--) {
+    const i = programme.seances.findIndex((s) => s.nom === historique[k]?.seance);
+    if (i >= 0) return (i + 1) % programme.seances.length;
+  }
+  return 0;
 }
 
 /**
@@ -959,6 +994,25 @@ function rendreAccueil() {
     liste.append(btn);
   });
   if (liste.children.length) hote.append(liste);
+
+  // ── 🔴 LA SÉANCE LIBRE — « des exercices qui sont IMPOSÉS » ──────────
+  //
+  // Les trois cartes ci-dessus sont les séances que le moteur a COMPOSÉES. Elles restent, et elles
+  // restent en premier : c'est ce qu'il fait 6 jours sur 7, et c'est la valeur du produit.
+  // Mais elles n'étaient pas une proposition — elles étaient **le seul chemin existant**.
+  //
+  // ⚠️ En dessous, pas au-dessus : ouvrir sur un catalogue de 60 exercices, ce serait remplacer
+  //    un coach par un tiroir. Le moteur PROPOSE toujours ; il n'IMPOSE plus.
+  const libre = el('button', 'crs-cta');
+  libre.type = 'button';
+  libre.dataset.libre = '';
+  libre.append(
+    el('span', 'crs-cta-i', '🎯'),
+    el('span', 'crs-cta-t', 'Séance libre'),
+    el('span', 'crs-cta-go', '+'),
+  );
+  libre.addEventListener('click', demarrerLibre);
+  hote.append(libre);
 
   // ── 🏃 LE GESTE QUI MANQUAIT — loguer une course ─────────────────────
   // Il est ICI, sur l'écran qu'il ouvre 6 jours sur 7, sous les séances de salle : la course n'est
@@ -1174,27 +1228,60 @@ function rendreAVenir() {
   const hote = $('#sc-avenir');
   hote.replaceChildren();
   const suite = etat.ordre.slice(etat.position + 1);
-  hote.hidden = seanceFinie(etat) || !suite.length;
+  // 🔴 IL RESTE VISIBLE MÊME SANS SUITE. « À venir » n'est plus seulement une liste : c'est
+  //    l'endroit où l'on AJOUTE. Le cacher sur le dernier exercice, c'est fermer la porte
+  //    exactement au moment où l'on veut en faire un de plus.
+  hote.hidden = seanceFinie(etat);
   if (hote.hidden) return;
 
-  hote.append(el('div', 'sc-avenir-lab', 'À venir'));
-  for (const i of suite) {
-    const b = etat.blocs[i];
-    const btn = el('button', 'sc-avenir-row');
-    btn.type = 'button';
-    btn.append(
-      el('span', null, echapper(b.nom)),
-      el('span', 'sc-avenir-go', `${derive(b.series_prevues)} × ${echapper(b.reps_cible)} · faire maintenant →`),
-    );
-    btn.addEventListener('click', async () => {
-      faireMaintenant(etat, i);
+  if (suite.length) {
+    hote.append(el('div', 'sc-avenir-lab', 'À venir'));
+    for (const i of suite) {
+      const b = etat.blocs[i];
+      const btn = el('button', 'sc-avenir-row');
+      btn.type = 'button';
+      btn.append(
+        el('span', null, echapper(b.nom)),
+        el('span', 'sc-avenir-go', `${derive(b.series_prevues)} × ${echapper(b.reps_cible)} · faire maintenant →`),
+      );
+      btn.addEventListener('click', async () => {
+        faireMaintenant(etat, i);
+        semer();
+        await sauver();
+        rendre();
+        annoncer(`${b.nom} — exercice avancé.`);
+      });
+      hote.append(btn);
+    }
+  }
+
+  // ── 🔴 AJOUTER UN EXERCICE — le geste qui n'existait nulle part ──────
+  // Il est ICI, à la fin de ce qui reste à faire, parce que c'est là qu'on se pose la question :
+  // « il me reste du jus, je rajoute des biceps ». Le menu « ··· » l'offre aussi — un geste que
+  // l'utilisateur ne trouve pas est un geste qui n'existe pas.
+  const plus = el('button', 'sc-avenir-row sc-avenir-row--plus');
+  plus.type = 'button';
+  plus.dataset.ajouter = '';
+  plus.append(
+    el('span', null, 'Ajouter un exercice'),
+    el('span', 'sc-avenir-go', '+'),
+  );
+  plus.addEventListener('click', ajouterUnExercice);
+  hote.append(plus);
+}
+
+/** Le catalogue, le verdict du moteur, puis le bloc entre dans la séance — en dernier. */
+function ajouterUnExercice() {
+  ouvrirChoixExercice({
+    titre: 'Ajouter un exercice',
+    apres: async (exercice) => {
+      ajouterExercice(etat, exercice);
       semer();
       await sauver();
       rendre();
-      annoncer(`${b.nom} — exercice avancé.`);
-    });
-    hote.append(btn);
-  }
+      annoncer(`${exercice.nom} ajouté à la séance.`);
+    },
+  });
 }
 
 /**
@@ -1696,13 +1783,48 @@ async function retirerLaSerie() {
 function menuExercice() {
   const b = blocCourant(etat);
   if (!b) return;
+  const iBloc = indexCourant(etat);
+  const commence = b.faites.length > 0;
+
   // ⚠️ « La machine est prise ? Ça tire quelque part ? On ajuste sans casser la séance. »
-  //    L'app interrogeait l'utilisateur pour lui présenter un menu. Les trois options
-  //    ci-dessous SONT la réponse : elles se lisent en une seconde, et elles disent
-  //    exactement ce qu'elles font. La question n'ajoutait rien qu'une voix.
+  //    L'app interrogeait l'utilisateur pour lui présenter un menu. Les options ci-dessous SONT
+  //    la réponse : elles se lisent en une seconde, et elles disent exactement ce qu'elles font.
+  //
+  // 🔴 ET ELLES SONT DEUX DE PLUS. Il pouvait déplacer un exercice, le passer, l'abandonner —
+  //    jamais le CHANGER. « Des exercices qui sont imposés » : le menu lui-même le prouvait.
   ouvrirFeuille({
     titre: b.nom,
     items: [
+      {
+        // Le rack est pris, ça tire à l'épaule, il en préfère un autre. Le moteur garde son droit
+        // de refuser le remplaçant (`libre.js`) : un choix libre n'est pas un choix sans filet.
+        libelle: 'Remplacer cet exercice',
+        sous: commence
+          ? `Tes ${b.faites.length} séries restent — celui-ci sera compté comme passé`
+          : 'Choisir un autre exercice à sa place',
+        faire: () => {
+          fermerFeuille();
+          ouvrirChoixExercice({
+            titre: `Remplacer ${b.nom}`,
+            exclure: b.nom,
+            apres: async (exercice) => {
+              remplacerExercice(etat, iBloc, exercice);
+              semer();
+              await sauver();
+              rendre();
+              annoncer(`${b.nom} remplacé par ${exercice.nom}.`);
+            },
+          });
+        },
+      },
+      {
+        libelle: 'Ajouter un exercice',
+        sous: 'Il vient s’ajouter à la fin de la séance',
+        faire: () => {
+          fermerFeuille();
+          ajouterUnExercice();
+        },
+      },
       {
         libelle: 'Faire plus tard',
         sous: 'Le remettre après les autres',
@@ -1718,14 +1840,30 @@ function menuExercice() {
         },
       },
       {
-        libelle: 'Passer cet exercice',
-        sous: b.faites.length ? `Les ${b.faites.length} séries déjà faites sont gardées` : 'Il ne sera pas compté',
+        // 🔴 RETIRER n'existe QUE sur un exercice intact. Des séries validées sont une donnée
+        //    irremplaçable (elles pilotent la charge suivante et portent la jauge sRPE) : dès
+        //    qu'il y en a une, le geste devient « Passer », qui garde tout et le dit.
+        libelle: commence ? 'Passer cet exercice' : 'Retirer cet exercice',
+        sous: commence
+          ? `Les ${b.faites.length} séries déjà faites sont gardées`
+          : 'Il sort de la séance du jour',
         faire: async () => {
-          passerExercice(etat);
+          if (commence) passerExercice(etat);
+          else retirerExercice(etat, iBloc);
+          fermerFeuille();
+          // 🔴 IL A RETIRÉ LE DERNIER EXERCICE. La séance est VIDE, et rien n'a été logué : elle
+          //    n'existe plus. La laisser affichée, ce serait un écran « terminé » dont le seul
+          //    bouton refuserait d'écrire (« aucune série validée ») — un cul-de-sac fabriqué.
+          //    On le ramène au choix des séances, où il retrouve tout, sans rien perdre.
+          if (!etat.ordre.length && !progression(etat).faites) {
+            await abandonner();
+            annoncer('Séance vidée — retour au choix des séances.');
+            return;
+          }
           semer();
           await sauver();
-          fermerFeuille();
           rendre();
+          annoncer(commence ? `${b.nom} passé.` : `${b.nom} retiré de la séance.`);
         },
       },
       {

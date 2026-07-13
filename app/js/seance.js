@@ -348,11 +348,14 @@ export function dateLocale(instant = Date.now()) {
  * @returns l'état de séance : un objet JSON pur, donc **persistable tel quel**
  *          (c'est ce qui permet de survivre à un kill de l'app par iOS).
  */
-export function creerSeance({ programme, jour = 0, debut = Date.now(), poids_corps_kg = null }) {
-  const s = programme?.seances?.[jour];
-  if (!s) throw new Error(`Le programme n'a pas de séance n°${jour + 1}.`);
-
-  const blocs = s.exercices.map((e) => ({
+/**
+ * Un exercice DU MOTEUR → un bloc de séance. La seule traduction, et il n'y en a qu'une :
+ * `creerSeance` l'appelle pour le programme du jour, `ajouterExercice`/`remplacerExercice` pour
+ * un exercice CHOISI (`src/lib/libre.js`). Deux traductions divergeraient — et l'exercice libre
+ * hériterait de la mauvaise, celle que les tests ne couvrent pas.
+ */
+export function blocDepuisExercice(e) {
+  return {
     nom: e.nom,
     exo_id: e.id ?? null,
     equipement: e.equipement ?? null,
@@ -390,9 +393,19 @@ export function creerSeance({ programme, jour = 0, debut = Date.now(), poids_cor
     // point d'ancrage. Le champ reste vide, l'état `inconnue` reste : c'est un repère,
     // pas une prescription. Vient du moteur (`muscu.js`), jamais de l'app.
     repere_charge: e.repere_charge ?? null,
+    // 🔴 Il l'a CHOISI, le moteur ne l'a pas prescrit. Le carnet doit pouvoir le dire — sinon,
+    // relu dans six mois, un exercice libre serait indiscernable d'une prescription.
+    libre: Boolean(e.libre),
     faites: [],
     passe: false,
-  }));
+  };
+}
+
+export function creerSeance({ programme, jour = 0, debut = Date.now(), poids_corps_kg = null }) {
+  const s = programme?.seances?.[jour];
+  if (!s) throw new Error(`Le programme n'a pas de séance n°${jour + 1}.`);
+
+  const blocs = s.exercices.map(blocDepuisExercice);
 
   return {
     version: 1,
@@ -448,6 +461,10 @@ export function progression(etat) {
   let faites = 0;
   let total = 0;
   for (const b of etat.blocs) {
+    // ⚠️ Un bloc RETIRÉ est sorti de `ordre`, mais il reste dans `blocs` : les index de `ordre`
+    // pointent dessus, et les décaler corromprait la séance en cours. Il ne compte pas — et il
+    // ne peut RIEN faire perdre : on ne retire que ce qui n'a AUCUNE série (`retirerExercice`).
+    if (b.retire) continue;
     faites += b.faites.length;
     total += b.passe ? b.faites.length : Math.max(b.series_prevues, b.faites.length);
   }
@@ -939,6 +956,88 @@ export function faireMaintenant(etat, iBloc) {
   etat.ordre.splice(k, 1);
   etat.ordre.splice(etat.position, 0, iBloc);
   etat.blocs[iBloc].passe = false;
+  return etat;
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// 🔴 LA SÉANCE N'EST PAS UNE LOI — ajouter · remplacer · retirer
+// ══════════════════════════════════════════════════════════════════════
+//
+//   > « Je n'ai pas l'impression que ce soit possible de choisir n'importe quel exercice que je
+//   >   voudrais faire — plutôt des exercices qui sont imposés. »
+//
+// Le plan du jour se plie déjà à la vie : on avance un exercice, on le repousse, on le passe, on
+// ajoute une série, on en retire une. **La seule chose qu'on ne pouvait pas faire, c'est CHANGER
+// L'EXERCICE lui-même.** Voici les trois verbes qui manquaient.
+//
+// ⚠️ **`blocs` ne se réindexe JAMAIS.** `ordre` est une liste d'INDEX dans `blocs` : supprimer un
+// élément de `blocs` décalerait tous les index suivants, et la séance en cours pointerait sur les
+// mauvais exercices — un `TypeError` au mieux, une série écrite sur le mauvais mouvement au pire.
+// Un bloc retiré sort de `ordre` et se marque `retire` ; il reste en place dans `blocs`.
+//
+// ⚠️ **Aucune série validée ne peut disparaître.** C'est la contrainte dure : elles sont écrites,
+// elles partent au journal (`terminerSeance` ne garde que les blocs qui ont des `faites`), et
+// elles pilotent la double progression. Un « remplacer » qui les jetterait serait le bug du carnet,
+// rejoué. → Un exercice DÉJÀ COMMENCÉ n'est pas retiré : il est **PASSÉ** (gardé, compté, journalisé),
+// et le remplaçant prend la place suivante.
+
+/** L'exercice choisi entre dans la séance, en dernier. @returns {number} l'index de son bloc. */
+export function ajouterExercice(etat, exercice) {
+  const i = etat.blocs.push(blocDepuisExercice(exercice)) - 1;
+  etat.ordre.push(i);
+  return i;
+}
+
+/**
+ * Le rack est pris, ça tire quelque part, il en a envie d'un autre : **on change l'exercice.**
+ *
+ * @returns {number} l'index du bloc REMPLAÇANT.
+ */
+export function remplacerExercice(etat, iBloc, exercice) {
+  const k = etat.ordre.indexOf(iBloc);
+  const ancien = etat.blocs[iBloc];
+  if (!ancien || k < 0) throw new Error("Cet exercice n'est plus dans la séance : il n'y a rien à remplacer.");
+
+  const j = etat.blocs.push(blocDepuisExercice(exercice)) - 1;
+
+  if (ancien.faites.length) {
+    // 🔴 SES SÉRIES SONT ÉCRITES — elles ne disparaissent pas. L'ancien devient un exercice
+    // PASSÉ : il reste dans l'ordre, il reste visible dans « ce qui est fait », et il part au
+    // journal avec ce qu'il a produit. Le remplaçant prend la place JUSTE APRÈS.
+    ancien.passe = true;
+    etat.ordre.splice(k + 1, 0, j);
+    // On était dessus : on le quitte, donc le remplaçant devient l'exercice courant.
+    if (k === etat.position) etat.position++;
+  } else {
+    // Rien de logué : ce bloc n'a jamais rien produit. Il sort de l'ordre, le remplaçant prend
+    // sa place EXACTE — même rang dans la séance, même moment.
+    ancien.retire = true;
+    etat.ordre.splice(k, 1, j);
+  }
+  return j;
+}
+
+/**
+ * Retirer un exercice du jour.
+ *
+ * 🔴 **Il REFUSE de retirer un exercice qui a des séries.** Ce n'est pas une timidité : ces séries
+ * sont une donnée irremplaçable (elles pilotent la charge suivante, elles portent la jauge sRPE).
+ * Le geste qui existe pour ça s'appelle **« Passer »** — il garde tout et il le dit.
+ */
+export function retirerExercice(etat, iBloc) {
+  const k = etat.ordre.indexOf(iBloc);
+  const b = etat.blocs[iBloc];
+  if (!b || k < 0) throw new Error("Cet exercice n'est plus dans la séance : il n'y a rien à retirer.");
+  if (b.faites.length) {
+    throw new Error(
+      `« ${b.nom} » : ${b.faites.length} série${b.faites.length > 1 ? 's sont enregistrées' : ' est enregistrée'}. ` +
+        `Elles ne peuvent pas disparaître — passe l'exercice, elles seront gardées et comptées.`,
+    );
+  }
+  b.retire = true;
+  etat.ordre.splice(k, 1);
+  // L'exercice retiré était AVANT la position : tout ce qui suit remonte d'un cran.
+  if (k < etat.position) etat.position--;
   return etat;
 }
 

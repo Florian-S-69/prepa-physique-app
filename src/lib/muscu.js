@@ -18,7 +18,10 @@ import { composerSemaineMuscuHybride } from "./placement.js";
 import { avisDepuisTexte, adaptationsMuscuEnAvis, adaptationsCourseEnAvis } from "./avis.js";
 
 // Prescriptions par objectif (veille/02 §3 & §7 ; isométries en durée, veille/09).
-const PRESCRIPTIONS = {
+// 🔓 Exportée pour `libre.js` : un exercice CHOISI hors programme doit être prescrit par la MÊME
+//    table que les exercices composés ici. Une seconde table divergerait — et c'est elle qui dirait
+//    à l'utilisateur combien de reps faire.
+export const PRESCRIPTIONS = {
   hypertrophie: { reps: "8–12", rir: "1–3", repos: "2–3 min" },
   hypertrophie_iso: { reps: "10–15", rir: "1–2", repos: "1–2 min" },
   force: { reps: "3–6", rir: "0–2", repos: "3–5 min" },
@@ -26,8 +29,9 @@ const PRESCRIPTIONS = {
   anti_rotation: { reps: "10–12 / côté", rir: "2–3", repos: "1 min" },
 };
 
-// Débutants : marges de RIR plus larges, focus technique (veille/02 §6).
-const RIR_DEBUTANT = { "1–3": "2–4", "1–2": "2–3", "0–2": "2–3" };
+// Débutants : marges de RIR plus larges, focus technique (veille/02 §6). Exportée pour la même
+// raison que `PRESCRIPTIONS` : le choix libre d'un débutant reste un choix de débutant.
+export const RIR_DEBUTANT = { "1–3": "2–4", "1–2": "2–3", "0–2": "2–3" };
 
 // Volume cible (séries pondérées/muscle/sem) selon le niveau (veille/02 §1 & §7).
 // @chiffre-derive veille/02 §1 donne DEUX repères : « ≥ 10 séries/sem/muscle » et « ≈ 10–12 pour un

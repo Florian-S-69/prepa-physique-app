@@ -599,6 +599,83 @@ export function chargerReferentiel(exercicesBruts) {
     // jour » (donnée valide, simplement pas utilisée par ce split/matériel).
     noms: Object.keys(musclePrincipal).sort((a, b) => a.localeCompare(b)),
     catalogue: (materiel, niveau) => construireCatalogue(parId, materiel, niveau),
+    // Le catalogue du CHOIX (toutes les variantes de tous les slots), par opposition au catalogue
+    // de la COMPOSITION (une variante par slot). Voir `catalogueOuvert`.
+    catalogueOuvert: (materiel, niveau) => catalogueOuvert(parId, materiel, niveau),
+  };
+}
+
+/**
+ * 🔴 LE CATALOGUE OUVERT — tout ce que le moteur SAIT JUGER.
+ *
+ * `construireCatalogue` (juste en dessous) résout **UN** exercice par slot : c'est ce qu'il faut
+ * pour **COMPOSER** un programme. Ce n'est pas ce qu'il faut pour **CHOISIR** — l'utilisateur veut
+ * voir les variantes, pas la seule que le moteur aurait prise à sa place.
+ *
+ *   > « Je n'ai pas l'impression que ce soit possible de choisir n'importe quel exercice que je
+ *   >   voudrais faire — plutôt des exercices qui sont imposés. »
+ *
+ * ⚠️ **Le vocabulaire reste FERMÉ, et c'est une décision de SÉCURITÉ, pas une paresse.** Un
+ * exercice hors de la table `SLOTS` n'a **ni `pattern` ni `slot`** — donc `limitations.js` ne peut
+ * **ni le REFUSER ni l'ADAPTER** : il traverserait le moteur sans être jugé. Ouvrir le choix aux
+ * 873 exercices du dataset, ce serait ouvrir 800 portes que le moteur ne sait pas garder — sur un
+ * produit de santé (philosophy §3). Et le nom est en plus la **CLÉ** du journal et de
+ * `charges_reference` : un nom hors référentiel est une charge orpheline.
+ * **On n'offre que ce qu'on sait juger.**
+ *
+ * ⚠️ **Ce qui est INDISPONIBLE n'est pas caché** : chaque exercice écarté par le matériel ou le
+ * niveau est rendu avec **sa raison**. Un catalogue qui se contente de ne pas montrer ce qu'il ne
+ * peut pas servir laisse croire que ça n'existe pas.
+ *
+ * @returns {{materiel, niveau, exercices: object[], indisponibles: object[], recommandation_materiel: string|null}}
+ */
+export function catalogueOuvert(parId, materiel, niveau) {
+  const equipements = PROFILS_MATERIEL[materiel];
+  if (!equipements) {
+    throw new Error(`Matériel « ${materiel} » inconnu : attendu ${Object.keys(PROFILS_MATERIEL).join(" | ")}.`);
+  }
+  const plafond = PLAFOND_NIVEAU[niveau] ?? 2;
+
+  const exercices = [];
+  const indisponibles = [];
+  for (const [nomSlot, slot] of Object.entries(SLOTS)) {
+    for (const id of idsDuSlot(slot)) {
+      const brut = parId.get(id);
+      if (!brut) continue; // `chargerReferentiel` a déjà refusé de démarrer sur un id inconnu.
+
+      const equipement = equipementDe(brut);
+      const okMateriel = equipements.includes(equipement);
+      const okNiveau = NIVEAU_DATASET[brut.level] <= plafond;
+      if (okMateriel && okNiveau) {
+        exercices.push(normaliserExercice(brut, slot, nomSlot));
+        continue;
+      }
+
+      const nom = NOMS[id] ?? brut.name;
+      indisponibles.push({
+        id,
+        nom,
+        slot: nomSlot,
+        pattern: slot.pattern,
+        raison: okMateriel ? "niveau" : "materiel",
+        // Le « pourquoi » vient du dataset et du profil — pas d'une phrase inventée ici.
+        message: okMateriel
+          ? `« ${nom} » est classé **${brut.level}** par le référentiel : il n'est prescrit qu'à partir du niveau **avancé**. ` +
+            `Ton profil déclare « ${niveau} ». Ce n'est pas un jugement sur toi — c'est la règle du référentiel, et elle ne se contourne pas depuis un écran.`
+          : `« ${nom} » demande **${equipement ?? "un matériel non renseigné"}** : absent de ton profil matériel (« ${materiel} »).`,
+      });
+    }
+  }
+
+  exercices.sort((a, b) => a.nom.localeCompare(b.nom, "fr"));
+  return {
+    materiel,
+    niveau,
+    exercices,
+    indisponibles,
+    recommandation_materiel: indisponibles.some((i) => i.raison === "materiel")
+      ? (RECOMMANDATION_MATERIEL[materiel] ?? null)
+      : null,
   };
 }
 

@@ -1888,3 +1888,96 @@ body.en-seance main { padding-bottom: calc(var(--sc-bar-h) + var(--sp-4)); }
    ⚠️ La TAXONOMIE ne bouge pas : couleur, « ~ » et précision restent. C'est elle qui porte
    la vérité (mesuré · dérivé · estimé) — pas la taille du glyphe. */
 .sc-derniere-meta .val { font-size: var(--fs-body-s); letter-spacing: 0; }
+
+/* ═══════════════════════════════════════════════════════════════════
+   🎯 LE SÉLECTEUR D'EXERCICE — « des exercices qui sont IMPOSÉS »
+   ═══════════════════════════════════════════════════════════════════
+   Le référentiel existait, le moteur savait refuser et adapter, le journal
+   savait recevoir. **Rien n'était tapable.** Voici la liste.
+
+   ⚠️ Un exercice REFUSÉ reste dans la liste. Il n'est pas grisé « pour faire
+   joli » : il est tapable, et son tap ouvre la raison DU MOTEUR. Le cacher
+   laisserait croire qu'il n'existe pas — et il le ferait quand même, sans
+   le filet. **On montre, on dit non, on dit pourquoi.**
+   ─────────────────────────────────────────────────────────────────── */
+.chx-q {
+  width: 100%; min-height: 48px;
+  padding: 0 var(--sp-4);
+  margin-bottom: var(--sp-3);
+  background: var(--fill-3);
+  border: 1px solid var(--line-8);
+  border-radius: var(--r-md);
+  color: var(--text);
+  font-family: inherit;
+  font-size: var(--fs-body);
+}
+.chx-liste { display: flex; flex-direction: column; }
+.chx-groupe {
+  margin: var(--sp-3) 0 var(--sp-2);
+  font-size: var(--fs-caption);
+  letter-spacing: var(--ls-caption);
+  color: var(--text-40);
+  font-weight: 800;
+}
+.chx-exo {
+  display: flex; align-items: center; gap: var(--sp-3);
+  width: 100%; min-height: 48px;   /* cible tactile : jamais sous 44 pt */
+  padding: 10px var(--sp-4);
+  margin-bottom: 6px;
+  text-align: left;
+  background: var(--fill-3);
+  border: 1px solid var(--line-8);
+  border-radius: var(--r-md);
+  color: var(--text);
+  font-family: inherit;
+  font-size: var(--fs-body);
+  font-weight: 600;
+  cursor: pointer;
+}
+.chx-exo-nom { flex: 1; }
+.chx-exo-go {
+  flex-shrink: 0;
+  font-size: var(--fs-meta);
+  font-weight: 800;
+  color: var(--acc);
+}
+/* ADAPTÉ : le remplaçant est ANNONCÉ dans la ligne. Aucune substitution en silence. */
+.chx-exo--adapte .chx-exo-go { color: var(--text-55); font-weight: 700; }
+/* REFUSÉ : il ne porte PAS la couleur de l'action — il n'en est pas une.
+   (Le renvoi médical avait déjà fait cette faute : il portait `--acc`, la couleur de
+   « Démarrer », donc il se lisait comme la tâche du jour au lieu d'un avertissement.) */
+.chx-exo--refuse, .chx-exo--indisponible {
+  background: none;
+  border-color: var(--line-6);
+  color: var(--text-45);
+}
+.chx-exo--refuse .chx-exo-nom, .chx-exo--indisponible .chx-exo-nom { text-decoration: line-through; }
+.chx-exo--refuse .chx-exo-go, .chx-exo--indisponible .chx-exo-go {
+  color: var(--danger);
+  font-weight: 700;
+}
+.chx-vide { margin: var(--sp-4) 0; font-size: var(--fs-body); color: var(--text-45); }
+/* Ce que le matériel et le niveau écartent : en bas, à un tap. Jamais supprimé. */
+.chx-hors {
+  display: flex; align-items: center; gap: var(--sp-3);
+  width: 100%; min-height: 44px;
+  margin-top: var(--sp-3);
+  padding: 10px var(--sp-4);
+  text-align: left;
+  background: none;
+  border: 1px dashed var(--line-8);
+  border-radius: var(--r-md);
+  color: var(--text-45);
+  font-family: inherit;
+  font-size: var(--fs-body-s);
+  cursor: pointer;
+}
+.chx-hors-go { margin-left: auto; font-size: var(--fs-meta); color: var(--text-55); font-weight: 700; }
+.chx-hors-l { margin: 0 0 var(--sp-3); font-size: var(--fs-body-s); color: var(--text-55); line-height: 1.5; }
+
+/* ── AJOUTER UN EXERCICE : la porte est à la fin de « À venir », là où la
+      question se pose (« il me reste du jus »). Discrète, mais présente
+      même quand il n'y a plus rien à venir — la cacher au dernier exercice,
+      c'est fermer la porte au moment précis où l'on veut l'ouvrir. */
+.sc-avenir-row--plus { border-style: dashed; color: var(--text-45); }
+.sc-avenir-row--plus .sc-avenir-go { color: var(--acc); font-size: var(--fs-body); }

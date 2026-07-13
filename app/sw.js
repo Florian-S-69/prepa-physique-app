@@ -19,7 +19,7 @@
  * portée de CONTRÔLE DE PAGES, pas d'interception d'URL.
  */
 
-const VERSION = 'v8';
+const VERSION = 'v9';
 const CACHE = `pp-shell-${VERSION}`;
 
 /** Le shell : tout ce qu'il faut pour que l'app démarre hors ligne. */
@@ -55,6 +55,11 @@ const SHELL = [
   // 🔴 LE RPE DE SÉANCE — la question, l'échelle, le « pourquoi ». Il est importé par les DEUX
   // écrans (salle et route) : absent du shell, ni la séance ni la course ne s'ouvrent hors ligne.
   './js/rpe.js',
+
+  // 🎯 LE CHOIX LIBRE. `ecran-seance.js` l'importe : absent du shell, le module principal échoue
+  // à s'évaluer et **plus aucun écran ne s'ouvre** hors ligne — pas seulement le sélecteur.
+  // C'est exactement le mode de panne des douze modules manquants (voir plus bas).
+  './js/choisir.js',
   './fonts/fonts.css',
   './fonts/hanken-grotesk-latin.woff2',
   './fonts/hanken-grotesk-latin-ext.woff2',
@@ -130,6 +135,11 @@ const SHELL = [
   '../src/lib/objectif.js',
   '../src/lib/angles-morts.js',
   '../src/lib/mode.js',
+
+  // 🎯 Le juge du choix libre (`jugerExerciceLibre` : REFUSER · ADAPTER · prescrire). Il est
+  // importé par `choisir.js` ET par `ecran-seance.js` (`NOM_SEANCE_LIBRE`) : sans lui en cache,
+  // la séance ne s'ouvre pas hors ligne — c'est-à-dire en salle.
+  '../src/lib/libre.js',
 
   // Les données. `exercises.json` (848 Ko, free-exercise-db, domaine public) est
   // le référentiel : sans lui, pas de programme. Il est gros MAIS téléchargé une
